@@ -43,10 +43,10 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await evolutionRes.json()
-  console.log('Evolution API send response:', JSON.stringify(result))
+  console.log(`Evolution API send [${evolutionRes.status}] number=${number}:`, JSON.stringify(result))
 
   if (!evolutionRes.ok || result.status === 'error' || result.error || result.response?.error) {
-    const errMsg = result.message || result.error || result.response?.message || `HTTP ${evolutionRes.status}`
+    const errMsg = result.message || result.error || result.response?.message || JSON.stringify(result)
     return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 

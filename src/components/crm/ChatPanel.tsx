@@ -122,7 +122,7 @@ export function ChatPanel({
       body: JSON.stringify({
         instanceName: contact.instance_name,
         contactId: contact.id,
-        phone: contact.phone,
+        phone: contact.remote_jid || contact.phone,
         text: body,
       }),
     })
