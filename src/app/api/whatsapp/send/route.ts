@@ -27,52 +27,37 @@ export async function POST(req: NextRequest) {
   const BASE_URL = process.env.EVOLUTION_API_URL!
   const API_KEY = process.env.EVOLUTION_API_KEY!
 
-  const number = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
+  const isGroup = phone.endsWith('@g.us') || phone.includes('@g.us')
+  // Individuais: garante @s.whatsapp.net; Grupos: usa JID como está
+  const number = isGroup
+    ? phone
+    : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
-  // Tenta formato simples primeiro, depois com textMessage wrapper
-  const bodies = [
-    { number, text },
-    { number, textMessage: { text } },
-  ]
+  console.log(`Enviando para ${number} via instância ${instanceName}`)
 
-  let lastResult: any = null
-  let lastStatus = 0
+  const res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: API_KEY },
+    body: JSON.stringify({ number, text }),
+  })
 
-  for (const bodyPayload of bodies) {
-    let res: Response
-    try {
-      res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: API_KEY },
-        body: JSON.stringify(bodyPayload),
-      })
-    } catch (err: any) {
-      console.error('Erro ao chamar Evolution API:', err)
-      return NextResponse.json({ error: 'Falha ao conectar com a Evolution API: ' + err?.message }, { status: 502 })
-    }
+  const result = await res.json()
+  console.log(`Evolution API [${res.status}]:`, JSON.stringify(result))
 
-    const result = await res.json()
-    console.log(`Evolution API send [${res.status}] payload=${JSON.stringify(bodyPayload)} response=${JSON.stringify(result)}`)
-
-    lastResult = result
-    lastStatus = res.status
-
-    if (res.ok && !result.error && result.status !== 'error') {
-      // Sucesso
-      await supabase().from('whatsapp_messages').insert({
-        contact_id: contactId,
-        instance_name: instanceName,
-        message_id: result.key?.id || crypto.randomUUID(),
-        from_me: true,
-        body: text,
-        message_type: 'text',
-        timestamp: new Date().toISOString(),
-      })
-      return NextResponse.json({ success: true })
-    }
+  if (!res.ok) {
+    const errMsg = result?.message || result?.error || JSON.stringify(result)
+    return NextResponse.json({ error: `[${res.status}] ${errMsg}` }, { status: 500 })
   }
 
-  // Retorna o erro completo para debug
-  const errMsg = lastResult?.message || lastResult?.error || JSON.stringify(lastResult)
-  return NextResponse.json({ error: `[${lastStatus}] ${errMsg}` }, { status: 500 })
+  await supabase().from('whatsapp_messages').insert({
+    contact_id: contactId,
+    instance_name: instanceName,
+    message_id: result.key?.id || crypto.randomUUID(),
+    from_me: true,
+    body: text,
+    message_type: 'text',
+    timestamp: new Date().toISOString(),
+  })
+
+  return NextResponse.json({ success: true })
 }
