@@ -93,3 +93,16 @@ export async function fetchMessages(instanceName: string, remoteJid: string, lim
   })
   return res.json()
 }
+
+export async function fetchGroupInfo(instanceName: string, groupJid: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/group/findGroupInfos/${instanceName}?groupJid=${groupJid}`, {
+      headers: headers(),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.subject || data?.name || null
+  } catch {
+    return null
+  }
+}

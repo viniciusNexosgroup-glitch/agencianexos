@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { fetchGroupInfo } from './evolution'
 
 function supabase() {
   return createClient(
@@ -41,9 +42,7 @@ export async function processWebhookEvent(body: any) {
       const subject = group?.subject || ''
       if (jid && subject && instance) {
         await db.from('whatsapp_contacts')
-          .update({ name: subject })
-          .eq('instance_name', instance)
-          .eq('phone', jid)
+          .upsert({ instance_name: instance, phone: jid, remote_jid: jid, name: subject }, { onConflict: 'instance_name,phone' })
       }
     }
   }
@@ -63,19 +62,26 @@ export async function processWebhookEvent(body: any) {
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
         : new Date().toISOString()
 
-      // Sender info within group
-      const participantJid = isGroup ? (msg.key.participant || '') : ''
+      // Sender info within group — Evolution API may put participant at root or under key
+      const participantJid = isGroup ? (msg.key.participant || msg.participant || '') : ''
       const participantName = isGroup ? (msg.pushName || participantJid.replace('@s.whatsapp.net', '')) : ''
-
-      // For groups: only update name if we have a real group subject (don't overwrite with sender's pushName)
-      const groupSubject = msg.groupMetadata?.subject || null
 
       const { data: existing } = await db.from('whatsapp_contacts')
         .select('id, name').eq('instance_name', instance).eq('phone', phone).maybeSingle()
 
-      const contactName = isGroup
-        ? (groupSubject || existing?.name || phone)
-        : (msg.pushName || existing?.name || phone)
+      let contactName: string
+      if (isGroup) {
+        // If existing name looks like a JID or is missing, fetch real group name from Evolution API
+        const hasRealName = existing?.name && !existing.name.endsWith('@g.us') && existing.name !== phone
+        if (hasRealName) {
+          contactName = existing!.name
+        } else {
+          const fetched = await fetchGroupInfo(instance, remoteJid)
+          contactName = fetched || existing?.name || phone
+        }
+      } else {
+        contactName = msg.pushName || existing?.name || phone
+      }
 
       await db.from('whatsapp_contacts').upsert({
         instance_name: instance,
