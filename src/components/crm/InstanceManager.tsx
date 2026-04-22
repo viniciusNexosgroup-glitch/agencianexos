@@ -28,20 +28,19 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
     setQrError(null)
     setQr(null)
 
-    // Polling por até 30 segundos
-    for (let i = 0; i < 10; i++) {
+    // Polling por até 60 segundos — QR chega via webhook e é salvo no Supabase
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 3000))
       const res = await fetch(`/api/whatsapp/instance/${instance.instance_name}/qr`)
       const data = await res.json()
-      console.log(`QR poll ${i + 1}:`, data)
       if (data?.base64) {
         setQr(data.base64)
         setLoadingQr(false)
         return
       }
-      await new Promise(r => setTimeout(r, 3000))
     }
 
-    setQrError('QR code não disponível. Verifique se a instância foi criada corretamente no Evolution API.')
+    setQrError('QR não chegou em 60s. Tente novamente ou verifique os logs da Evolution API.')
     setLoadingQr(false)
   }
 
