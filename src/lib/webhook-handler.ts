@@ -95,7 +95,7 @@ export async function processWebhookEvent(body: any) {
         .select('id').eq('instance_name', instance).eq('phone', phone).single()).data?.id
 
       if (contactId) {
-        await db.from('whatsapp_messages').upsert({
+        const msgPayload: Record<string, unknown> = {
           contact_id: contactId,
           instance_name: instance,
           message_id: msg.key.id,
@@ -105,7 +105,15 @@ export async function processWebhookEvent(body: any) {
           timestamp,
           participant_name: participantName || null,
           participant_jid: participantJid || null,
-        }, { onConflict: 'message_id' })
+        }
+        const { error: msgErr } = await db.from('whatsapp_messages').upsert(msgPayload, { onConflict: 'message_id' })
+        if (msgErr) {
+          console.error('Erro ao salvar mensagem (tentando sem participant fields):', msgErr.message)
+          // Retry sem as colunas de participante caso não existam ainda
+          const { participant_name, participant_jid, ...payloadSemParticipant } = msgPayload
+          const { error: retryErr } = await db.from('whatsapp_messages').upsert(payloadSemParticipant, { onConflict: 'message_id' })
+          if (retryErr) console.error('Erro no retry:', retryErr.message)
+        }
       }
     }
   }
