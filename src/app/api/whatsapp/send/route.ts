@@ -23,12 +23,15 @@ export async function POST(req: NextRequest) {
   const BASE_URL = process.env.EVOLUTION_API_URL!
   const API_KEY = process.env.EVOLUTION_API_KEY!
 
+  // Evolution API v2 exige @s.whatsapp.net para contatos individuais e @g.us para grupos
+  const number = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
+
   let evolutionRes: Response
   try {
     evolutionRes = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: API_KEY },
-      body: JSON.stringify({ number: phone, text }),
+      body: JSON.stringify({ number, text }),
     })
   } catch (err: any) {
     console.error('Erro ao chamar Evolution API:', err)
