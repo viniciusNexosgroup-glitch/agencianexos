@@ -10,6 +10,13 @@ function supabase() {
   )
 }
 
+async function evFetch(path: string, init?: RequestInit) {
+  return fetch(`${process.env.EVOLUTION_API_URL}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', apikey: process.env.EVOLUTION_API_KEY!, ...(init?.headers ?? {}) },
+  })
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -21,37 +28,34 @@ export async function POST(req: NextRequest) {
   }
 
   if (phone.includes('@lid')) {
-    return NextResponse.json({ error: 'Contato inválido (dispositivo vinculado, sem número real)' }, { status: 400 })
+    return NextResponse.json({ error: 'Contato inválido (dispositivo vinculado)' }, { status: 400 })
   }
 
-  const BASE_URL = process.env.EVOLUTION_API_URL!
-  const API_KEY = process.env.EVOLUTION_API_KEY!
+  const isGroup = phone.includes('@g.us')
+  const number = isGroup ? phone : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
-  const isGroup = phone.endsWith('@g.us') || phone.includes('@g.us')
-  // Individuais: garante @s.whatsapp.net; Grupos: usa JID como está
-  const number = isGroup
-    ? phone
-    : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
+  // Para grupos: aquece a sessão do Baileys antes de tentar enviar
+  if (isGroup) {
+    try {
+      await evFetch(`/group/fetchAllGroups/${instanceName}?getParticipants=false`)
+    } catch {
+      // ignora erro no warm-up, tenta enviar mesmo assim
+    }
+  }
 
-  console.log(`Enviando para ${number} via instância ${instanceName}`)
-
-  const res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
+  const res = await evFetch(`/message/sendText/${instanceName}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: API_KEY },
     body: JSON.stringify({ number, text }),
   })
 
   const result = await res.json()
-  console.log(`Evolution API [${res.status}]:`, JSON.stringify(result))
+  console.log(`send [${res.status}] ${number}:`, JSON.stringify(result).slice(0, 200))
 
   if (!res.ok) {
-    const innerMsg = result?.response?.message?.[0] || result?.response?.message || ''
-    const errMsg = result?.message || result?.error || JSON.stringify(result)
-    const sessionErr = innerMsg?.toString().includes('SessionError')
-    if (sessionErr) {
-      return NextResponse.json({ error: 'Sessão do grupo não está ativa. Desconecte e reconecte o WhatsApp na aba Instâncias.' }, { status: 500 })
-    }
-    return NextResponse.json({ error: `[${res.status}] ${errMsg}` }, { status: 500 })
+    const inner = result?.response?.message
+    const innerStr = Array.isArray(inner) ? inner.join(', ') : String(inner ?? '')
+    const errMsg = result?.message || result?.error || innerStr || JSON.stringify(result)
+    return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 
   const { error: dbError } = await supabase().from('whatsapp_messages').insert({
@@ -64,9 +68,7 @@ export async function POST(req: NextRequest) {
     timestamp: new Date().toISOString(),
   })
 
-  if (dbError) {
-    console.error('Erro ao salvar mensagem no Supabase:', dbError)
-  }
+  if (dbError) console.error('DB insert error:', dbError.message)
 
   return NextResponse.json({ success: true })
 }
