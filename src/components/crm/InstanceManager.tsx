@@ -22,6 +22,8 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
   const [qrError, setQrError] = useState<string | null>(null)
   const [loadingQr, setLoadingQr] = useState(false)
   const [status, setStatus] = useState(instance.status)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
 
   async function fetchQr() {
     setLoadingQr(true)
@@ -56,6 +58,16 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
     await fetch(`/api/whatsapp/instance/${instance.instance_name}?action=logout`, { method: 'DELETE' })
     setStatus('disconnected')
     setQr(null)
+  }
+
+  async function syncGroups() {
+    setSyncing(true)
+    setSyncMsg(null)
+    const res = await fetch(`/api/whatsapp/instance/${instance.instance_name}/sync-groups`, { method: 'POST' })
+    const data = await res.json()
+    setSyncing(false)
+    setSyncMsg(data.error ? `Erro: ${data.error}` : `${data.groups ?? 0} grupos sincronizados`)
+    setTimeout(() => setSyncMsg(null), 4000)
   }
 
   async function handleDelete() {
@@ -129,8 +141,22 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
       )}
 
       {status === 'connected' && (
-        <div className="mt-2 flex items-center gap-2 text-green-400 text-xs">
-          <span>WhatsApp conectado</span>
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="flex items-center gap-2 text-green-400 text-xs">
+            <span>WhatsApp conectado</span>
+          </div>
+          <button
+            onClick={syncGroups}
+            disabled={syncing}
+            className="w-full text-xs text-indigo-400 hover:text-white border border-indigo-800 hover:bg-indigo-800 disabled:opacity-40 py-1.5 rounded-lg transition"
+          >
+            {syncing ? 'Sincronizando grupos...' : 'Sincronizar Grupos'}
+          </button>
+          {syncMsg && (
+            <p className={`text-xs text-center ${syncMsg.startsWith('Erro') ? 'text-red-400' : 'text-green-400'}`}>
+              {syncMsg}
+            </p>
+          )}
         </div>
       )}
     </div>
