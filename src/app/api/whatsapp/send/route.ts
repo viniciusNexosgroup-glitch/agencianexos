@@ -27,7 +27,22 @@ export async function POST(req: NextRequest) {
   const BASE_URL = process.env.EVOLUTION_API_URL!
   const API_KEY = process.env.EVOLUTION_API_KEY!
 
-  // Evolution API v2 exige @s.whatsapp.net para contatos individuais e @g.us para grupos
+  // Verifica se a instância está conectada antes de tentar enviar
+  try {
+    const stateRes = await fetch(`${BASE_URL}/instance/connectionState/${instanceName}`, {
+      headers: { apikey: API_KEY },
+    })
+    const stateData = await stateRes.json()
+    console.log('Instance state:', JSON.stringify(stateData))
+    const state = stateData?.instance?.state || stateData?.state || ''
+    if (state !== 'open') {
+      return NextResponse.json({ error: `Instância desconectada (estado: ${state || 'desconhecido'}). Reconecte o WhatsApp.` }, { status: 400 })
+    }
+  } catch (err) {
+    console.error('Erro ao verificar estado da instância:', err)
+  }
+
+  // Evolution API v2: @s.whatsapp.net para individuais, @g.us para grupos (já vem com @)
   const number = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
   let evolutionRes: Response
