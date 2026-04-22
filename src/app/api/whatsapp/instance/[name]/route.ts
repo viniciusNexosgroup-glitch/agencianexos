@@ -32,6 +32,9 @@ export async function GET(req: NextRequest, { params }: { params: { name: string
   }
 
   const data = await getInstanceStatus(name)
+  const state = data?.instance?.state || data?.state || ''
+  const status = state === 'open' ? 'connected' : 'disconnected'
+  await supabase().from('whatsapp_instances').update({ status }).eq('instance_name', name)
   return NextResponse.json(data)
 }
 
