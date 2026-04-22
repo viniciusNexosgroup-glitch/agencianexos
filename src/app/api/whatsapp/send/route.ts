@@ -27,53 +27,52 @@ export async function POST(req: NextRequest) {
   const BASE_URL = process.env.EVOLUTION_API_URL!
   const API_KEY = process.env.EVOLUTION_API_KEY!
 
-  // Verifica se a instância está conectada antes de tentar enviar
-  try {
-    const stateRes = await fetch(`${BASE_URL}/instance/connectionState/${instanceName}`, {
-      headers: { apikey: API_KEY },
-    })
-    const stateData = await stateRes.json()
-    console.log('Instance state:', JSON.stringify(stateData))
-    const state = stateData?.instance?.state || stateData?.state || ''
-    if (state !== 'open') {
-      return NextResponse.json({ error: `Instância desconectada (estado: ${state || 'desconhecido'}). Reconecte o WhatsApp.` }, { status: 400 })
-    }
-  } catch (err) {
-    console.error('Erro ao verificar estado da instância:', err)
-  }
-
-  // Evolution API v2: @s.whatsapp.net para individuais, @g.us para grupos (já vem com @)
   const number = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
-  let evolutionRes: Response
-  try {
-    evolutionRes = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: API_KEY },
-      body: JSON.stringify({ number, textMessage: { text } }),
-    })
-  } catch (err: any) {
-    console.error('Erro ao chamar Evolution API:', err)
-    return NextResponse.json({ error: 'Falha ao conectar com a Evolution API' }, { status: 502 })
+  // Tenta formato simples primeiro, depois com textMessage wrapper
+  const bodies = [
+    { number, text },
+    { number, textMessage: { text } },
+  ]
+
+  let lastResult: any = null
+  let lastStatus = 0
+
+  for (const bodyPayload of bodies) {
+    let res: Response
+    try {
+      res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: API_KEY },
+        body: JSON.stringify(bodyPayload),
+      })
+    } catch (err: any) {
+      console.error('Erro ao chamar Evolution API:', err)
+      return NextResponse.json({ error: 'Falha ao conectar com a Evolution API: ' + err?.message }, { status: 502 })
+    }
+
+    const result = await res.json()
+    console.log(`Evolution API send [${res.status}] payload=${JSON.stringify(bodyPayload)} response=${JSON.stringify(result)}`)
+
+    lastResult = result
+    lastStatus = res.status
+
+    if (res.ok && !result.error && result.status !== 'error') {
+      // Sucesso
+      await supabase().from('whatsapp_messages').insert({
+        contact_id: contactId,
+        instance_name: instanceName,
+        message_id: result.key?.id || crypto.randomUUID(),
+        from_me: true,
+        body: text,
+        message_type: 'text',
+        timestamp: new Date().toISOString(),
+      })
+      return NextResponse.json({ success: true })
+    }
   }
 
-  const result = await evolutionRes.json()
-  console.log(`Evolution API send [${evolutionRes.status}] number=${number}:`, JSON.stringify(result))
-
-  if (!evolutionRes.ok || result.status === 'error' || result.error || result.response?.error) {
-    const errMsg = result.message || result.error || result.response?.message || JSON.stringify(result)
-    return NextResponse.json({ error: errMsg }, { status: 500 })
-  }
-
-  await supabase().from('whatsapp_messages').insert({
-    contact_id: contactId,
-    instance_name: instanceName,
-    message_id: result.key?.id || crypto.randomUUID(),
-    from_me: true,
-    body: text,
-    message_type: 'text',
-    timestamp: new Date().toISOString(),
-  })
-
-  return NextResponse.json({ success: true })
+  // Retorna o erro completo para debug
+  const errMsg = lastResult?.message || lastResult?.error || JSON.stringify(lastResult)
+  return NextResponse.json({ error: `[${lastStatus}] ${errMsg}` }, { status: 500 })
 }
