@@ -39,6 +39,8 @@ export async function processWebhookEvent(body: any) {
     for (const msg of messages) {
       if (!msg?.key?.remoteJid) continue
       const remoteJid = msg.key.remoteJid
+      // Skip @lid (linked devices) and broadcast
+      if (remoteJid.endsWith('@lid') || remoteJid === 'status@broadcast') continue
       const isGroup = remoteJid.endsWith('@g.us')
       const phone = isGroup ? remoteJid : remoteJid.replace('@s.whatsapp.net', '')
       const fromMe = msg.key.fromMe ?? false
@@ -47,10 +49,15 @@ export async function processWebhookEvent(body: any) {
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
         : new Date().toISOString()
 
+      // For groups, use group subject/name; for individuals use pushName
+      const name = isGroup
+        ? (msg.groupMetadata?.subject || msg.pushName || remoteJid)
+        : (msg.pushName || phone)
+
       await db.from('whatsapp_contacts').upsert({
         instance_name: instance,
         phone,
-        name: msg.pushName || phone,
+        name,
         remote_jid: remoteJid,
         last_message_at: timestamp,
       }, { onConflict: 'instance_name,phone' })
