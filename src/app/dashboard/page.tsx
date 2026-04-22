@@ -6,7 +6,6 @@ import { SpendChart } from '@/components/SpendChart'
 import { CampaignTable } from '@/components/CampaignTable'
 import { GoogleCampaignTable } from '@/components/GoogleCampaignTable'
 import { DateRangePicker } from '@/components/DateRangePicker'
-import { LogoutButton } from '@/components/LogoutButton'
 import { DashboardTabs } from '@/components/DashboardTabs'
 
 function fmt(n: number) { return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
@@ -99,31 +98,8 @@ export default async function DashboardPage({
     })).sort((a, b) => b.spend - a.spend)
 
     return (
-      <div className="min-h-screen bg-[#080b12]">
-        <header className="border-b border-slate-800 bg-[#0d1117] px-6 py-4">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-white font-semibold text-sm">Ads Dashboard</h1>
-                <p className="text-slate-400 text-xs">{client?.name || session.email}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <a href="/dashboard/crm" className="text-green-400 hover:text-green-300 text-sm transition font-medium">CRM WhatsApp</a>
-              {client?.is_admin && (
-                <a href="/admin" className="text-indigo-400 hover:text-indigo-300 text-sm transition">Admin</a>
-              )}
-              <LogoutButton />
-            </div>
-          </div>
-        </header>
-
-        <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <div className="flex-1">
+        <main className="px-6 py-8 space-y-8">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-3">
               <DashboardTabs active="google" />
@@ -253,36 +229,8 @@ export default async function DashboardPage({
   const selectedAccount = allAccounts.find(a => a.ad_account_id === selectedAccountId)
 
   return (
-    <div className="min-h-screen bg-[#080b12]">
-      <header className="border-b border-slate-800 bg-[#0d1117] px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-white font-semibold text-sm">Ads Dashboard</h1>
-              <p className="text-slate-400 text-xs">{client?.name || session.email}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            {lastSync && (
-              <span className="text-slate-500 text-xs hidden md:block">
-                Último sync: {new Date(lastSync.created_at).toLocaleDateString('pt-BR')}
-              </span>
-            )}
-            <a href="/dashboard/crm" className="text-green-400 hover:text-green-300 text-sm transition font-medium">CRM WhatsApp</a>
-            {client?.is_admin && (
-              <a href="/admin" className="text-indigo-400 hover:text-indigo-300 text-sm transition">Admin</a>
-            )}
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+    <div className="flex-1">
+      <main className="px-6 py-8 space-y-8">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="space-y-3">
             <DashboardTabs active="meta" />

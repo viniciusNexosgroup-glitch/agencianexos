@@ -27,33 +27,24 @@ export default async function CrmPage({ searchParams }: { searchParams: { tab?: 
     .order('created_at', { ascending: true })
 
   return (
-    <div className="min-h-screen bg-[#0a0d12] text-white">
-      <div className="max-w-screen-xl mx-auto px-6 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <a href="/dashboard" className="text-slate-500 hover:text-slate-300 text-sm transition">← Dashboard</a>
-            </div>
-            <h1 className="text-2xl font-bold text-white">CRM WhatsApp</h1>
-            <p className="text-slate-500 text-sm mt-1">Gerencie leads e conversas do WhatsApp</p>
-          </div>
-        </div>
+    <div className="flex-1 text-white px-6 py-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">CRM WhatsApp</h1>
+        <p className="text-slate-500 text-sm mt-1">Gerencie leads e conversas do WhatsApp</p>
+      </div>
 
-        {/* Tabs */}
-        <CrmTabs active={tab as any} />
+      <CrmTabs active={tab as any} />
 
-        <div className={tab === 'contatos' ? 'mt-4' : 'mt-6'}>
-          {tab === 'kanban' && (
-            <FunnelManager funnels={funnels ?? []} />
-          )}
-          {tab === 'contatos' && (
-            <ContactsList funnels={funnels ?? []} />
-          )}
-          {tab === 'instancias' && (
-            <InstanceManager />
-          )}
-        </div>
+      <div className={tab === 'contatos' ? 'mt-4' : 'mt-6'}>
+        {tab === 'kanban' && (
+          <FunnelManager funnels={funnels ?? []} />
+        )}
+        {tab === 'contatos' && (
+          <ContactsList funnels={funnels ?? []} />
+        )}
+        {tab === 'instancias' && (
+          <InstanceManager />
+        )}
       </div>
     </div>
   )
