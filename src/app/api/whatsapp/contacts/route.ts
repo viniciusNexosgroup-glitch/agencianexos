@@ -17,6 +17,8 @@ export async function GET() {
   const { data } = await supabase()
     .from('whatsapp_contacts')
     .select('*')
+    .not('phone', 'like', '%@lid')
+    .not('phone', 'eq', 'status@broadcast')
     .order('last_message_at', { ascending: false })
 
   return NextResponse.json({ contacts: data ?? [] })

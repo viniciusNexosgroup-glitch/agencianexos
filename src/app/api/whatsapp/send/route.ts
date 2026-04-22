@@ -20,6 +20,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'instanceName, phone e text são obrigatórios' }, { status: 400 })
   }
 
+  if (phone.includes('@lid')) {
+    return NextResponse.json({ error: 'Contato inválido (dispositivo vinculado, sem número real)' }, { status: 400 })
+  }
+
   const BASE_URL = process.env.EVOLUTION_API_URL!
   const API_KEY = process.env.EVOLUTION_API_KEY!
 
