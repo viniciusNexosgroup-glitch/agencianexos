@@ -9,23 +9,43 @@ type Contact = {
   phone: string
   instance_name: string
   last_message_at: string | null
+  remote_jid: string | null
 }
 
-type Lead = {
-  id: string
-  title: string
-  crm_stages: { name: string } | null
+function getInitials(name: string) {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
+
+const AVATAR_COLORS = [
+  'bg-teal-600', 'bg-indigo-600', 'bg-purple-600', 'bg-pink-600',
+  'bg-orange-600', 'bg-cyan-600', 'bg-emerald-600', 'bg-rose-600',
+]
+
+function avatarColor(name: string) {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+
+function isGroup(contact: Contact) {
+  return contact.remote_jid?.endsWith('@g.us') || contact.phone?.includes('@g.us')
+}
+
+function formatTime(ts: string | null) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  }
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
 export function ContactsList({ funnels }: { funnels: { id: string; name: string; crm_stages: { id: string; name: string }[] }[] }) {
   const [contacts, setContacts] = useState<Contact[]>([])
-  const [leads, setLeads] = useState<Record<string, Lead[]>>({})
   const [loading, setLoading] = useState(true)
   const [chatContact, setChatContact] = useState<Contact | null>(null)
   const [search, setSearch] = useState('')
-  const [addingLead, setAddingLead] = useState<string | null>(null)
-  const [stageId, setStageId] = useState('')
-  const [funnelId, setFunnelId] = useState('')
 
   async function load() {
     const res = await fetch('/api/whatsapp/contacts')
@@ -36,128 +56,107 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
 
   useEffect(() => { load() }, [])
 
-  async function addToFunnel(contactId: string) {
-    if (!stageId || !funnelId) return
-    await fetch('/api/whatsapp/leads', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contactId, stageId, funnelId, title: 'Novo Lead' }),
-    })
-    setAddingLead(null)
-    setStageId('')
-    setFunnelId('')
-  }
-
   const filtered = contacts.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     c.phone.includes(search)
   )
 
-  const selectedFunnel = funnels.find(f => f.id === funnelId)
-
-  if (loading) return <p className="text-slate-400 text-sm">Carregando contatos...</p>
-
   return (
-    <div className="flex gap-6 h-full">
-      {/* Contacts list */}
-      <div className={`flex-1 min-w-0 ${chatContact ? 'hidden md:block' : ''}`}>
-        <div className="mb-4">
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por nome ou telefone..."
-            className="w-full bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-indigo-500 transition placeholder-slate-500"
-          />
+    <div className="flex h-[calc(100vh-160px)] rounded-xl overflow-hidden border border-[#222e35]">
+      {/* Sidebar */}
+      <div className={`flex flex-col bg-[#111b21] ${chatContact ? 'hidden md:flex w-[360px] flex-shrink-0' : 'flex-1 md:w-[360px] md:flex-shrink-0'}`}>
+        {/* Sidebar header */}
+        <div className="px-4 py-3 bg-[#202c33] flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-white text-sm font-bold">
+            WA
+          </div>
+          <span className="text-white font-semibold flex-1">Conversas</span>
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="text-slate-500 text-sm text-center py-12 border border-dashed border-slate-700 rounded-xl">
-            {contacts.length === 0
-              ? 'Nenhum contato ainda. Conecte um WhatsApp e aguarde mensagens chegarem.'
-              : 'Nenhum contato encontrado.'}
+        {/* Search */}
+        <div className="px-3 py-2 bg-[#111b21]">
+          <div className="flex items-center bg-[#202c33] rounded-lg px-3 gap-2">
+            <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Pesquisar ou começar uma conversa"
+              className="flex-1 bg-transparent text-white text-sm py-2 outline-none placeholder-[#8696a0]"
+            />
           </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {filtered.map(contact => (
-              <div
-                key={contact.id}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between hover:border-slate-600 transition"
-              >
-                <div className="min-w-0">
-                  <p className="text-white text-sm font-medium truncate">{contact.name}</p>
-                  <p className="text-slate-400 text-xs">{contact.phone} · <span className="text-slate-500">{contact.instance_name}</span></p>
+        </div>
+
+        {/* Contact list */}
+        <div className="flex-1 overflow-y-auto">
+          {loading && (
+            <p className="text-[#8696a0] text-sm text-center py-8">Carregando...</p>
+          )}
+          {!loading && filtered.length === 0 && (
+            <p className="text-[#8696a0] text-sm text-center py-8 px-4">
+              {contacts.length === 0
+                ? 'Nenhuma conversa ainda. Aguarde mensagens chegarem.'
+                : 'Nenhum resultado.'}
+            </p>
+          )}
+          {filtered.map(contact => (
+            <button
+              key={contact.id}
+              onClick={() => setChatContact(contact)}
+              className={`w-full flex items-center gap-3 px-3 py-3 hover:bg-[#202c33] transition border-b border-[#222e35] ${
+                chatContact?.id === contact.id ? 'bg-[#2a3942]' : ''
+              }`}
+            >
+              {/* Avatar */}
+              <div className={`w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center text-white font-semibold text-sm ${avatarColor(contact.name)}`}>
+                {isGroup(contact)
+                  ? <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                  : getInitials(contact.name)
+                }
+              </div>
+              {/* Info */}
+              <div className="flex-1 min-w-0 text-left">
+                <div className="flex items-center justify-between">
+                  <span className="text-white text-sm font-medium truncate">{contact.name}</span>
                   {contact.last_message_at && (
-                    <p className="text-slate-600 text-xs mt-0.5">
-                      {new Date(contact.last_message_at).toLocaleDateString('pt-BR')}
-                    </p>
+                    <span className="text-[#8696a0] text-xs flex-shrink-0 ml-2">
+                      {formatTime(contact.last_message_at)}
+                    </span>
                   )}
                 </div>
-                <div className="flex gap-2 ml-3 flex-shrink-0">
-                  {addingLead === contact.id ? (
-                    <div className="flex flex-col gap-2 items-end">
-                      <select
-                        value={funnelId}
-                        onChange={e => { setFunnelId(e.target.value); setStageId('') }}
-                        className="bg-slate-800 text-white text-xs rounded px-2 py-1 border border-slate-600 outline-none"
-                      >
-                        <option value="">Funil...</option>
-                        {funnels.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                      </select>
-                      {selectedFunnel && (
-                        <select
-                          value={stageId}
-                          onChange={e => setStageId(e.target.value)}
-                          className="bg-slate-800 text-white text-xs rounded px-2 py-1 border border-slate-600 outline-none"
-                        >
-                          <option value="">Etapa...</option>
-                          {selectedFunnel.crm_stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      )}
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => addToFunnel(contact.id)}
-                          disabled={!stageId}
-                          className="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-2 py-1 rounded transition"
-                        >
-                          Adicionar
-                        </button>
-                        <button
-                          onClick={() => setAddingLead(null)}
-                          className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 transition"
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => setAddingLead(contact.id)}
-                        className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 transition"
-                      >
-                        + Funil
-                      </button>
-                      <button
-                        onClick={() => setChatContact(contact)}
-                        className="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded border border-indigo-800 transition"
-                      >
-                        Chat
-                      </button>
-                    </>
-                  )}
+                <div className="flex items-center gap-1">
+                  {isGroup(contact)
+                    ? <span className="text-[#8696a0] text-xs truncate">Grupo</span>
+                    : <span className="text-[#8696a0] text-xs truncate">{contact.phone}</span>
+                  }
                 </div>
               </div>
-            ))}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chat area */}
+      <div className={`flex-1 flex flex-col bg-[#0b141a] ${!chatContact ? 'hidden md:flex' : 'flex'}`}>
+        {chatContact ? (
+          <ChatPanel
+            contact={chatContact}
+            onClose={() => setChatContact(null)}
+            funnels={funnels}
+          />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+            <div className="w-20 h-20 rounded-full bg-[#202c33] flex items-center justify-center mb-6">
+              <svg className="w-10 h-10 text-[#8696a0]" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+              </svg>
+            </div>
+            <h3 className="text-[#e9edef] text-xl font-light mb-2">WhatsApp CRM</h3>
+            <p className="text-[#8696a0] text-sm">Selecione uma conversa para abrir</p>
           </div>
         )}
       </div>
-
-      {/* Chat panel */}
-      {chatContact && (
-        <div className="w-full md:w-96 flex-shrink-0 h-[600px]">
-          <ChatPanel contact={chatContact} onClose={() => setChatContact(null)} />
-        </div>
-      )}
     </div>
   )
 }

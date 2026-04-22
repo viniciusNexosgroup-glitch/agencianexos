@@ -43,7 +43,7 @@ export default async function CrmPage({ searchParams }: { searchParams: { tab?: 
         {/* Tabs */}
         <CrmTabs active={tab as any} />
 
-        <div className="mt-6">
+        <div className={tab === 'contatos' ? 'mt-4' : 'mt-6'}>
           {tab === 'kanban' && (
             <FunnelManager funnels={funnels ?? []} />
           )}

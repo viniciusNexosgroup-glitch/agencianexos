@@ -37,9 +37,10 @@ export async function processWebhookEvent(body: any) {
   if (event === 'MESSAGES_UPSERT') {
     const messages = Array.isArray(body.data) ? body.data : [body.data]
     for (const msg of messages) {
-      if (!msg?.key?.remoteJid || msg.key.remoteJid.endsWith('@g.us')) continue
+      if (!msg?.key?.remoteJid) continue
       const remoteJid = msg.key.remoteJid
-      const phone = remoteJid.replace('@s.whatsapp.net', '')
+      const isGroup = remoteJid.endsWith('@g.us')
+      const phone = isGroup ? remoteJid : remoteJid.replace('@s.whatsapp.net', '')
       const fromMe = msg.key.fromMe ?? false
       const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
       const timestamp = msg.messageTimestamp
