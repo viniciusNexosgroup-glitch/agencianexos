@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { contactId, stageId, funnelId, title, notes } = await req.json()
+  const { contactId, stageId, funnelId, title, notes, value } = await req.json()
 
   const { data: maxPos } = await supabase()
     .from('crm_leads')
@@ -48,23 +48,34 @@ export async function POST(req: NextRequest) {
     funnel_id: funnelId,
     title: title || 'Lead',
     notes: notes || '',
+    value: value || 0,
     position,
   }).select().single()
 
   return NextResponse.json({ lead })
 }
 
+export async function DELETE(req: NextRequest) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 })
+  await supabase().from('crm_leads').delete().eq('id', id)
+  return NextResponse.json({ success: true })
+}
+
 export async function PATCH(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { id, stageId, position, notes, title } = await req.json()
+  const { id, stageId, position, notes, title, value } = await req.json()
 
   const updates: Record<string, unknown> = {}
   if (stageId !== undefined) updates.stage_id = stageId
   if (position !== undefined) updates.position = position
   if (notes !== undefined) updates.notes = notes
   if (title !== undefined) updates.title = title
+  if (value !== undefined) updates.value = value
 
   await supabase().from('crm_leads').update(updates).eq('id', id)
   return NextResponse.json({ success: true })
