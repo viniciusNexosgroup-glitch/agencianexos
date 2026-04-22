@@ -61,16 +61,16 @@ export async function setWebhook(instanceName: string, webhookUrl: string) {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({
-      webhook: {
-        enabled: true,
-        url: webhookUrl,
-        webhookByEvents: false,
-        webhookBase64: false,
-        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
-      },
+      url: webhookUrl,
+      enabled: true,
+      webhookByEvents: false,
+      webhookBase64: false,
+      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
     }),
   })
-  return res.json()
+  const data = await res.json()
+  console.log('Webhook set response:', JSON.stringify(data))
+  return data
 }
 
 export async function sendTextMessage(instanceName: string, to: string, text: string) {

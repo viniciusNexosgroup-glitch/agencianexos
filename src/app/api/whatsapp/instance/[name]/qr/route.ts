@@ -17,8 +17,11 @@ export async function GET(req: NextRequest, { params }: { params: { name: string
 
   const { name } = params
 
+  // Aguarda 3s para Evolution API inicializar o QR
+  await new Promise(r => setTimeout(r, 3000))
+
   // Tenta via Evolution API HTTP direto com retries
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const data = await getQRCode(name)
     console.log(`QR attempt ${i + 1}:`, JSON.stringify(data))
     const base64 =
@@ -27,7 +30,7 @@ export async function GET(req: NextRequest, { params }: { params: { name: string
       data?.data?.base64 ||
       null
     if (base64) return NextResponse.json({ base64 })
-    await new Promise(r => setTimeout(r, 1500))
+    await new Promise(r => setTimeout(r, 3000))
   }
 
   // Fallback: busca do Supabase (salvo pelo webhook)
