@@ -9,46 +9,48 @@ function supabase() {
   )
 }
 
-export async function POST(req: NextRequest) {
-  const body = await req.json()
+export async function processWebhookEvent(body: any) {
   const db = supabase()
+  const rawEvent: string = body.event || ''
+  const event = rawEvent.toUpperCase().replace(/\./g, '_').replace(/-/g, '_')
+  const instance: string = body.instance || body.data?.instance || ''
 
-  if (body.event === 'QRCODE_UPDATED') {
-    const { instance, data } = body
-    const qr = data?.qrcode?.base64 || data?.base64 || null
-    if (qr) {
+  console.log('Webhook received:', event, 'instance:', instance)
+
+  if (event === 'QRCODE_UPDATED') {
+    const qr =
+      body.data?.qrcode?.base64 ||
+      body.data?.base64 ||
+      null
+    console.log('QR received, base64 length:', qr?.length)
+    if (qr && instance) {
       await db.from('whatsapp_instances').update({ qr_base64: qr }).eq('instance_name', instance)
     }
   }
 
-  if (body.event === 'CONNECTION_UPDATE') {
-    const { instance, data } = body
-    const status = data?.state === 'open' ? 'connected' : 'disconnected'
+  if (event === 'CONNECTION_UPDATE') {
+    const state = body.data?.state || body.data?.instance?.state || ''
+    const status = state === 'open' ? 'connected' : 'disconnected'
     const updates: Record<string, unknown> = { status }
     if (status === 'connected') updates.qr_base64 = null
-    await db.from('whatsapp_instances').update(updates).eq('instance_name', instance)
+    if (instance) {
+      await db.from('whatsapp_instances').update(updates).eq('instance_name', instance)
+    }
   }
 
-  if (body.event === 'MESSAGES_UPSERT') {
-    const { instance, data } = body
-    const messages = Array.isArray(data) ? data : [data]
-
+  if (event === 'MESSAGES_UPSERT') {
+    const messages = Array.isArray(body.data) ? body.data : [body.data]
     for (const msg of messages) {
       if (!msg?.key?.remoteJid || msg.key.remoteJid.endsWith('@g.us')) continue
-
       const remoteJid = msg.key.remoteJid
       const phone = remoteJid.replace('@s.whatsapp.net', '')
       const fromMe = msg.key.fromMe ?? false
-      const text = msg.message?.conversation
-        || msg.message?.extendedTextMessage?.text
-        || ''
+      const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
       const timestamp = msg.messageTimestamp
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
         : new Date().toISOString()
-
       const pushName = msg.pushName || ''
 
-      // Upsert contact
       await db.from('whatsapp_contacts').upsert({
         instance_name: instance,
         phone,
@@ -57,7 +59,6 @@ export async function POST(req: NextRequest) {
         last_message_at: timestamp,
       }, { onConflict: 'instance_name,phone' })
 
-      // Get contact id
       const { data: contact } = await db
         .from('whatsapp_contacts')
         .select('id')
@@ -78,6 +79,10 @@ export async function POST(req: NextRequest) {
       }
     }
   }
+}
 
+export async function POST(req: NextRequest) {
+  const body = await req.json()
+  await processWebhookEvent(body)
   return NextResponse.json({ ok: true })
 }
