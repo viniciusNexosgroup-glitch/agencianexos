@@ -45,11 +45,16 @@ export async function POST(req: NextRequest) {
   console.log(`Evolution API [${res.status}]:`, JSON.stringify(result))
 
   if (!res.ok) {
+    const innerMsg = result?.response?.message?.[0] || result?.response?.message || ''
     const errMsg = result?.message || result?.error || JSON.stringify(result)
+    const sessionErr = innerMsg?.toString().includes('SessionError')
+    if (sessionErr) {
+      return NextResponse.json({ error: 'Sessão do grupo não está ativa. Desconecte e reconecte o WhatsApp na aba Instâncias.' }, { status: 500 })
+    }
     return NextResponse.json({ error: `[${res.status}] ${errMsg}` }, { status: 500 })
   }
 
-  await supabase().from('whatsapp_messages').insert({
+  const { error: dbError } = await supabase().from('whatsapp_messages').insert({
     contact_id: contactId,
     instance_name: instanceName,
     message_id: result.key?.id || crypto.randomUUID(),
@@ -58,6 +63,10 @@ export async function POST(req: NextRequest) {
     message_type: 'text',
     timestamp: new Date().toISOString(),
   })
+
+  if (dbError) {
+    console.error('Erro ao salvar mensagem no Supabase:', dbError)
+  }
 
   return NextResponse.json({ success: true })
 }
