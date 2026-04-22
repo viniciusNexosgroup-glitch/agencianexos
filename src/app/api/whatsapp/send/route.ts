@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sendTextMessage } from '@/lib/evolution'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
 
@@ -17,8 +16,32 @@ export async function POST(req: NextRequest) {
 
   const { instanceName, contactId, phone, text } = await req.json()
 
-  const result = await sendTextMessage(instanceName, phone, text)
-  if (result.error) return NextResponse.json({ error: result.error }, { status: 500 })
+  if (!instanceName || !phone || !text) {
+    return NextResponse.json({ error: 'instanceName, phone e text são obrigatórios' }, { status: 400 })
+  }
+
+  const BASE_URL = process.env.EVOLUTION_API_URL!
+  const API_KEY = process.env.EVOLUTION_API_KEY!
+
+  let evolutionRes: Response
+  try {
+    evolutionRes = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: API_KEY },
+      body: JSON.stringify({ number: phone, text }),
+    })
+  } catch (err: any) {
+    console.error('Erro ao chamar Evolution API:', err)
+    return NextResponse.json({ error: 'Falha ao conectar com a Evolution API' }, { status: 502 })
+  }
+
+  const result = await evolutionRes.json()
+  console.log('Evolution API send response:', JSON.stringify(result))
+
+  if (!evolutionRes.ok || result.status === 'error' || result.error || result.response?.error) {
+    const errMsg = result.message || result.error || result.response?.message || `HTTP ${evolutionRes.status}`
+    return NextResponse.json({ error: errMsg }, { status: 500 })
+  }
 
   await supabase().from('whatsapp_messages').insert({
     contact_id: contactId,
