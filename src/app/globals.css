@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+body {
+  background-color: #080b12;
+  color: #f1f5f9;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  border-radius: 8px !important;
+}
+
+.recharts-cartesian-axis-tick-value {
+  fill: #64748b;
+  font-size: 12px;
+}
