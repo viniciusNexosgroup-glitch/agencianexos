@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     evolutionRes = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: API_KEY },
-      body: JSON.stringify({ number, text }),
+      body: JSON.stringify({ number, textMessage: { text } }),
     })
   } catch (err: any) {
     console.error('Erro ao chamar Evolution API:', err)

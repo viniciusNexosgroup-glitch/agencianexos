@@ -79,7 +79,7 @@ export async function sendTextMessage(instanceName: string, to: string, text: st
     headers: headers(),
     body: JSON.stringify({
       number: to,
-      text,
+      textMessage: { text },
     }),
   })
   return res.json()
