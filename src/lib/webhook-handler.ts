@@ -34,6 +34,20 @@ export async function processWebhookEvent(body: any) {
     }
   }
 
+  if (event === 'GROUPS_UPSERT' || event === 'GROUPS_UPDATE') {
+    const groups = Array.isArray(body.data) ? body.data : [body.data]
+    for (const group of groups) {
+      const jid = group?.id || group?.remoteJid || ''
+      const subject = group?.subject || ''
+      if (jid && subject && instance) {
+        await db.from('whatsapp_contacts')
+          .update({ name: subject })
+          .eq('instance_name', instance)
+          .eq('phone', jid)
+      }
+    }
+  }
+
   if (event === 'MESSAGES_UPSERT') {
     const messages = Array.isArray(body.data) ? body.data : [body.data]
     for (const msg of messages) {
@@ -49,32 +63,42 @@ export async function processWebhookEvent(body: any) {
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
         : new Date().toISOString()
 
-      // For groups, use group subject/name; for individuals use pushName
-      const name = isGroup
-        ? (msg.groupMetadata?.subject || msg.pushName || remoteJid)
-        : (msg.pushName || phone)
+      // Sender info within group
+      const participantJid = isGroup ? (msg.key.participant || '') : ''
+      const participantName = isGroup ? (msg.pushName || participantJid.replace('@s.whatsapp.net', '')) : ''
+
+      // For groups: only update name if we have a real group subject (don't overwrite with sender's pushName)
+      const groupSubject = msg.groupMetadata?.subject || null
+
+      const { data: existing } = await db.from('whatsapp_contacts')
+        .select('id, name').eq('instance_name', instance).eq('phone', phone).maybeSingle()
+
+      const contactName = isGroup
+        ? (groupSubject || existing?.name || phone)
+        : (msg.pushName || existing?.name || phone)
 
       await db.from('whatsapp_contacts').upsert({
         instance_name: instance,
         phone,
-        name,
+        name: contactName,
         remote_jid: remoteJid,
         last_message_at: timestamp,
       }, { onConflict: 'instance_name,phone' })
 
-      const { data: contact } = await db
-        .from('whatsapp_contacts').select('id')
-        .eq('instance_name', instance).eq('phone', phone).single()
+      const contactId = existing?.id || (await db.from('whatsapp_contacts')
+        .select('id').eq('instance_name', instance).eq('phone', phone).single()).data?.id
 
-      if (contact) {
+      if (contactId) {
         await db.from('whatsapp_messages').upsert({
-          contact_id: contact.id,
+          contact_id: contactId,
           instance_name: instance,
           message_id: msg.key.id,
           from_me: fromMe,
           body: text,
           message_type: Object.keys(msg.message || {})[0] || 'text',
           timestamp,
+          participant_name: participantName || null,
+          participant_jid: participantJid || null,
         }, { onConflict: 'message_id' })
       }
     }

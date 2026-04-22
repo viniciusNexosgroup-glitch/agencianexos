@@ -8,6 +8,8 @@ type Message = {
   body: string
   timestamp: string
   message_type: string
+  participant_name?: string | null
+  participant_jid?: string | null
 }
 
 type Contact = {
@@ -22,6 +24,16 @@ const AVATAR_COLORS = [
   'bg-teal-600', 'bg-indigo-600', 'bg-purple-600', 'bg-pink-600',
   'bg-orange-600', 'bg-cyan-600', 'bg-emerald-600', 'bg-rose-600',
 ]
+
+const SENDER_COLORS = [
+  '#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6',
+  '#1abc9c','#e67e22','#e91e63','#00bcd4','#8bc34a',
+]
+
+function senderColor(name: string) {
+  let h = 0; for (const c of name) h = c.charCodeAt(0) + ((h << 5) - h)
+  return SENDER_COLORS[Math.abs(h) % SENDER_COLORS.length]
+}
 
 function avatarColor(name: string) {
   let hash = 0
@@ -186,25 +198,35 @@ export function ChatPanel({
                 {group.date}
               </span>
             </div>
-            {group.messages.map(msg => (
-              <div key={msg.id} className={`flex mb-1.5 ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[65%] px-3 py-2 rounded-lg shadow-sm relative ${
-                  msg.from_me
-                    ? 'bg-[#005c4b] text-white rounded-br-none'
-                    : 'bg-[#202c33] text-[#e9edef] rounded-bl-none'
-                }`}>
-                  <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                    {msg.body || <span className="italic text-[#8696a0] text-xs">[mídia]</span>}
-                  </p>
-                  <p className={`text-[10px] mt-1 text-right ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>
-                    {formatTime(msg.timestamp)}
-                    {msg.from_me && (
-                      <span className="ml-1">✓✓</span>
+            {group.messages.map((msg, idx) => {
+              const senderName = msg.participant_name || ''
+              const showSender = isGroup && !msg.from_me && senderName &&
+                (idx === 0 || group.messages[idx - 1].participant_jid !== msg.participant_jid || group.messages[idx - 1].from_me)
+              const color = senderName ? senderColor(senderName) : '#8696a0'
+
+              return (
+                <div key={msg.id} className={`flex mb-1 ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[65%] px-3 py-2 rounded-lg shadow-sm ${
+                    msg.from_me
+                      ? 'bg-[#005c4b] text-white rounded-br-none'
+                      : 'bg-[#202c33] text-[#e9edef] rounded-bl-none'
+                  }`}>
+                    {showSender && (
+                      <p className="text-xs font-semibold mb-1" style={{ color }}>
+                        {senderName}
+                      </p>
                     )}
-                  </p>
+                    <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                      {msg.body || <span className="italic text-[#8696a0] text-xs">[mídia]</span>}
+                    </p>
+                    <p className={`text-[10px] mt-1 text-right ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>
+                      {formatTime(msg.timestamp)}
+                      {msg.from_me && <span className="ml-1">✓✓</span>}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ))}
         <div ref={bottomRef} />
