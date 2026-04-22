@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { processWebhookEvent } from '../route'
+import { processWebhookEvent } from '@/lib/webhook-handler'
 
 export async function POST(req: NextRequest, { params }: { params: { event: string } }) {
   const body = await req.json()
