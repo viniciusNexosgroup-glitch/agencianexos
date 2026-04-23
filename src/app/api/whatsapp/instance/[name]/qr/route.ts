@@ -17,6 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: { name: string
   const { name } = params
   const db = supabase()
 
+  // Verifica se já está conectado no banco
   const { data: inst } = await db
     .from('whatsapp_instances')
     .select('qr_base64, status')
@@ -27,23 +28,36 @@ export async function GET(req: NextRequest, { params }: { params: { name: string
     return NextResponse.json({ connected: true, base64: null })
   }
 
-  // Se não há QR salvo, chama Evolution API connect para disparar geração do QR
-  if (!inst?.qr_base64) {
-    try {
-      const res = await fetch(
-        `${process.env.EVOLUTION_API_URL}/instance/connect/${name}`,
-        { headers: { apikey: process.env.EVOLUTION_API_KEY! } }
-      )
+  // Sempre tenta buscar/gerar QR direto da Evolution API
+  try {
+    const res = await fetch(
+      `${process.env.EVOLUTION_API_URL}/instance/connect/${name}`,
+      { headers: { apikey: process.env.EVOLUTION_API_KEY! } }
+    )
+    if (res.ok) {
       const data = await res.json()
+      // Evolution API v2 retorna { base64, code, count } ou { qrcode: { base64 } }
       const qr = data?.base64 || data?.qrcode?.base64 || null
       if (qr) {
-        await db.from('whatsapp_instances').update({ qr_base64: qr }).eq('instance_name', name)
+        // Salva no banco para o webhook ter como referência
+        await db.from('whatsapp_instances')
+          .update({ qr_base64: qr })
+          .eq('instance_name', name)
         return NextResponse.json({ base64: qr })
       }
-    } catch {
-      // ignora erro, retorna null e aguarda webhook
+
+      // Se a instância já está conectada na Evolution API
+      if (data?.instance?.state === 'open' || data?.state === 'open') {
+        await db.from('whatsapp_instances')
+          .update({ status: 'connected', qr_base64: null })
+          .eq('instance_name', name)
+        return NextResponse.json({ connected: true, base64: null })
+      }
     }
+  } catch {
+    // Falha na Evolution API — tenta retornar QR salvo no banco
   }
 
+  // Fallback: retorna QR salvo no banco (pode ter chegado via webhook)
   return NextResponse.json({ base64: inst?.qr_base64 || null })
 }
