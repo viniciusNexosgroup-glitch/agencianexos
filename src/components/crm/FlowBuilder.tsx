@@ -89,7 +89,15 @@ export function FlowBuilder() {
       const res = await fetch('/api/whatsapp/flows')
       if (res.ok) {
         const d = await res.json()
-        setFlows(d.flows ?? d ?? [])
+        const raw: Flow[] = d.flows ?? d ?? []
+        setFlows(raw.map(f => ({
+          ...f,
+          steps: f.steps ?? [],
+          status: f.status ?? (f as any).is_active ? 'active' : 'inactive',
+          active_executions: f.active_executions ?? 0,
+          trigger_type: f.trigger_type ?? 'keyword',
+          trigger_value: f.trigger_value ?? '',
+        })))
       }
     } finally {
       setLoading(false)
@@ -161,7 +169,15 @@ export function FlowBuilder() {
       })
       if (res.ok) {
         const d = await res.json()
-        const created: Flow = d.flow ?? d
+        const raw = d.flow ?? d
+        const created: Flow = {
+          ...raw,
+          steps: raw.steps ?? [],
+          status: raw.status ?? raw.is_active ? 'active' : 'inactive',
+          active_executions: raw.active_executions ?? 0,
+          trigger_type: raw.trigger_type ?? 'keyword',
+          trigger_value: raw.trigger_value ?? '',
+        }
         setFlows(fs => [created, ...fs])
         setNewFlowName('')
         setNewFlowInstance('')
