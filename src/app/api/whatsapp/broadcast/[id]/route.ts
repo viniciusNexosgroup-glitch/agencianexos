@@ -18,7 +18,7 @@ async function sendEvolutionMessage(instance: string, number: string, text: stri
       'Content-Type': 'application/json',
       apikey: process.env.EVOLUTION_API_KEY!,
     },
-    body: JSON.stringify({ number, textMessage: { text } }),
+    body: JSON.stringify({ number, text }),
   })
   return res.ok
 }

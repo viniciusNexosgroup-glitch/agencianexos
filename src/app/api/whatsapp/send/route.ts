@@ -17,16 +17,6 @@ async function evFetch(path: string, init?: RequestInit) {
   })
 }
 
-async function trySendText(instanceName: string, payload: object): Promise<{ ok: boolean; status: number; body: unknown }> {
-  const res = await evFetch(`/message/sendText/${instanceName}`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-  const body = await res.json().catch(() => ({}))
-  console.log(`[send] payload=${JSON.stringify(payload).slice(0, 200)} status=${res.status} response=${JSON.stringify(body).slice(0, 400)}`)
-  return { ok: res.ok, status: res.status, body }
-}
-
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -58,49 +48,30 @@ export async function POST(req: NextRequest) {
   }
 
   const isGroup = phone.includes('@g.us')
-  const numberFull = isGroup ? phone : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
-  // Para grupos: também tenta sem @g.us (algumas versões da Evolution API v2)
-  const numberStripped = isGroup ? phone.replace('@g.us', '') : numberFull
+  const number = isGroup ? phone : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
-  console.log(`[send] isGroup=${isGroup} numberFull=${numberFull} instance=${instanceName}`)
+  const res = await evFetch(`/message/sendText/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({ number, text }),
+  })
 
-  // Sequência de tentativas em ordem de prioridade
-  const attempts = isGroup
-    ? [
-        { number: numberFull, text },                         // v2 com @g.us
-        { number: numberFull, textMessage: { text } },        // v1 com @g.us
-        { number: numberStripped, text },                     // v2 sem @g.us
-        { number: numberStripped, textMessage: { text } },    // v1 sem @g.us
-      ]
-    : [
-        { number: numberFull, text },                         // v2 individual
-        { number: numberFull, textMessage: { text } },        // v1 individual
-      ]
+  const result = await res.json().catch(() => ({})) as Record<string, unknown>
 
-  let lastResult: { ok: boolean; status: number; body: unknown } = { ok: false, status: 0, body: {} }
-
-  for (const payload of attempts) {
-    lastResult = await trySendText(instanceName, payload)
-    if (lastResult.ok) break
-    if (lastResult.status !== 400) break  // erro diferente de validação, para de tentar
+  if (!res.ok) {
+    const msgs = (result?.response as Record<string, unknown>)?.message
+    const detail = Array.isArray(msgs) ? msgs.flat().join(', ') : String(msgs ?? '')
+    const errMsg = detail || result?.message as string || result?.error as string || JSON.stringify(result)
+    // Traduz erros comuns do WhatsApp/Baileys para mensagens legíveis
+    if (errMsg.includes('not-acceptable')) {
+      return NextResponse.json({ error: 'Grupo com envio restrito a admins. Peça ao admin para liberar ou te promover a admin.' }, { status: 400 })
+    }
+    return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 
-  if (!lastResult.ok) {
-    const r = lastResult.body as Record<string, unknown>
-    const inner = (r?.response as Record<string, unknown>)?.message
-    const innerStr = Array.isArray(inner) ? inner.join(', ') : String(inner ?? '')
-    const msg = (Array.isArray(r?.message) ? (r.message as string[]).join(', ') : r?.message as string)
-      || r?.error as string
-      || innerStr
-      || JSON.stringify(r)
-    return NextResponse.json({ error: `[${numberFull}] ${msg}` }, { status: 500 })
-  }
-
-  const result = lastResult.body as Record<string, unknown>
   const { error: dbError } = await supabase().from('whatsapp_messages').insert({
     contact_id: contactId,
     instance_name: instanceName,
-    message_id: (result.key as Record<string, unknown>)?.id || crypto.randomUUID(),
+    message_id: (result.key as Record<string, unknown>)?.id as string || crypto.randomUUID(),
     from_me: true,
     body: text,
     message_type: 'text',
