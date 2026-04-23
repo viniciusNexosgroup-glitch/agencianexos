@@ -160,10 +160,12 @@ export async function POST(req: NextRequest) {
       }
 
       // Registra notificação
-      await db.from('notifications').insert({
-        title: 'Novo lead via Facebook Ads',
-        body: `${name} (${phone}) preencheu um formulário no Facebook`,
-      }).catch(() => null)
+      try {
+        await db.from('notifications').insert({
+          title: 'Novo lead via Facebook Ads',
+          body: `${name} (${phone}) preencheu um formulário no Facebook`,
+        })
+      } catch { /* notificação não crítica */ }
 
       console.log(`Lead Facebook criado: ${name} (${phone})`)
     }
