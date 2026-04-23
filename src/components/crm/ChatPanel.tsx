@@ -27,6 +27,12 @@ type Lead = {
   contact_id: string
 }
 
+type Agent = { id: string; name: string; email: string }
+
+type InteractiveButton = { id: string; text: string }
+type InteractiveListItem = { id: string; title: string; description?: string }
+type InteractiveSection = { title: string; rows: InteractiveListItem[] }
+
 type QuickReply = {
   id: string
   shortcut: string
@@ -142,12 +148,32 @@ export function ChatPanel({
   const [updatingStage, setUpdatingStage] = useState(false)
   const stageDropdownRef = useRef<HTMLDivElement>(null)
 
+  // Transferência de conversa
+  const [showTransfer, setShowTransfer] = useState(false)
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [transferTo, setTransferTo] = useState('')
+  const [transferNote, setTransferNote] = useState('')
+  const [transferring, setTransferring] = useState(false)
+  const [currentAgent, setCurrentAgent] = useState<Agent | null>(null)
+
+  // Mensagens interativas
+  const [showInteractive, setShowInteractive] = useState(false)
+  const [interactiveTab, setInteractiveTab] = useState<'buttons' | 'list'>('buttons')
+  const [iTitle, setITitle] = useState('')
+  const [iBody, setIBody] = useState('')
+  const [iFooter, setIFooter] = useState('')
+  const [iButtons, setIButtons] = useState<InteractiveButton[]>([{ id: '1', text: '' }, { id: '2', text: '' }])
+  const [iListBtn, setIListBtn] = useState('')
+  const [iSections, setISections] = useState<InteractiveSection[]>([{ title: '', rows: [{ id: '1', title: '' }] }])
+  const [sendingInteractive, setSendingInteractive] = useState(false)
+
   useEffect(() => {
     setMessages([])
     setLoading(true)
     setError(null)
     load()
     loadLead()
+    loadCurrentAgent()
     const interval = setInterval(load, 5000)
     return () => clearInterval(interval)
   }, [contact.id])
@@ -205,6 +231,81 @@ export function ChatPanel({
       setLead(data.lead ?? null)
     } catch {
       setLead(null)
+    }
+  }
+
+  async function loadCurrentAgent() {
+    try {
+      const res = await fetch(`/api/whatsapp/transfers?contact_id=${contact.id}`)
+      const data = await res.json()
+      setCurrentAgent(data.current_agent ?? null)
+    } catch {
+      setCurrentAgent(null)
+    }
+  }
+
+  async function loadAgents() {
+    if (agents.length > 0) return
+    const res = await fetch('/api/whatsapp/agents')
+    const data = await res.json()
+    setAgents(data.agents ?? [])
+  }
+
+  async function transfer() {
+    if (!transferTo || transferring) return
+    setTransferring(true)
+    await fetch('/api/whatsapp/transfers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contact_id: contact.id, to_agent_id: transferTo, note: transferNote }),
+    })
+    setTransferring(false)
+    setShowTransfer(false)
+    setTransferNote('')
+    await loadCurrentAgent()
+  }
+
+  async function sendInteractive() {
+    if (sendingInteractive) return
+    setSendingInteractive(true)
+    try {
+      const body: Record<string, unknown> = {
+        type: interactiveTab,
+        instanceName: contact.instance_name,
+        contactId: contact.id,
+        phone: contact.remote_jid || contact.phone,
+        title: iTitle,
+        body: iBody,
+        footer: iFooter,
+      }
+      if (interactiveTab === 'buttons') {
+        body.buttons = iButtons.filter(b => b.text.trim())
+      } else {
+        body.buttonText = iListBtn || 'Ver opções'
+        body.sections = iSections.map(s => ({
+          title: s.title,
+          rows: s.rows.filter(r => r.title.trim()).map(r => ({
+            rowId: r.id,
+            title: r.title,
+            description: r.description || '',
+          })),
+        })).filter(s => s.rows.length > 0)
+      }
+      const res = await fetch('/api/whatsapp/interactive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error) } else {
+        setShowInteractive(false)
+        setITitle(''); setIBody(''); setIFooter(''); setIListBtn('')
+        setIButtons([{ id: '1', text: '' }, { id: '2', text: '' }])
+        setISections([{ title: '', rows: [{ id: '1', title: '' }] }])
+        setTimeout(load, 1500)
+      }
+    } finally {
+      setSendingInteractive(false)
     }
   }
 
@@ -516,6 +617,30 @@ export function ChatPanel({
           </div>
         )}
 
+        {/* Botão mensagem interativa */}
+        {!isGroup && (
+          <button
+            onClick={() => setShowInteractive(v => !v)}
+            title="Enviar mensagem interativa (botões ou lista)"
+            className={`p-1.5 rounded-full transition ${showInteractive ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h10" />
+            </svg>
+          </button>
+        )}
+
+        {/* Botão transferir */}
+        <button
+          onClick={() => { setShowTransfer(v => !v); loadAgents() }}
+          title={currentAgent ? `Atribuído a: ${currentAgent.name}` : 'Transferir conversa'}
+          className={`p-1.5 rounded-full transition ${showTransfer ? 'text-[#00a884]' : currentAgent ? 'text-indigo-400' : 'text-[#8696a0] hover:text-white'}`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+
         {/* Botão de busca */}
         <button
           onClick={() => {
@@ -682,6 +807,120 @@ export function ChatPanel({
           ) : (
             <p className="text-[#8696a0] text-xs">Nenhum agendamento pendente.</p>
           )}
+        </div>
+      )}
+
+      {/* Painel de transferência */}
+      {showTransfer && (
+        <div className="bg-[#202c33] border-t border-[#2a3942] px-4 pt-3 pb-3 flex-shrink-0">
+          <p className="text-[#8696a0] text-xs font-semibold uppercase tracking-wide mb-2">Transferir conversa</p>
+          {currentAgent && (
+            <p className="text-indigo-400 text-xs mb-2">Atribuído atual: <strong>{currentAgent.name}</strong></p>
+          )}
+          <div className="space-y-2">
+            <select
+              value={transferTo}
+              onChange={e => setTransferTo(e.target.value)}
+              className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none border border-[#3b4a54] focus:border-[#00a884] transition"
+            >
+              <option value="">Selecionar agente...</option>
+              {agents.map(a => (
+                <option key={a.id} value={a.id}>{a.name} — {a.email}</option>
+              ))}
+            </select>
+            <input
+              value={transferNote}
+              onChange={e => setTransferNote(e.target.value)}
+              placeholder="Nota de transferência (opcional)"
+              className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none border border-[#3b4a54] focus:border-[#00a884] placeholder-[#8696a0] transition"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={transfer}
+                disabled={!transferTo || transferring}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-medium py-2 rounded-lg transition"
+              >
+                {transferring ? 'Transferindo...' : 'Transferir'}
+              </button>
+              <button
+                onClick={() => setShowTransfer(false)}
+                className="px-3 py-2 text-xs text-[#8696a0] hover:text-white border border-[#3b4a54] rounded-lg transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Painel de mensagem interativa */}
+      {showInteractive && (
+        <div className="bg-[#202c33] border-t border-[#2a3942] px-4 pt-3 pb-3 flex-shrink-0 max-h-80 overflow-y-auto">
+          <div className="flex items-center gap-2 mb-3">
+            <button
+              onClick={() => setInteractiveTab('buttons')}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition ${interactiveTab === 'buttons' ? 'bg-[#00a884] text-white' : 'bg-[#2a3942] text-[#8696a0]'}`}
+            >Botões</button>
+            <button
+              onClick={() => setInteractiveTab('list')}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition ${interactiveTab === 'list' ? 'bg-[#00a884] text-white' : 'bg-[#2a3942] text-[#8696a0]'}`}
+            >Lista</button>
+          </div>
+          <div className="space-y-2">
+            <input value={iTitle} onChange={e => setITitle(e.target.value)} placeholder="Título (opcional)"
+              className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none border border-[#3b4a54] focus:border-[#00a884] placeholder-[#8696a0] transition" />
+            <textarea value={iBody} onChange={e => setIBody(e.target.value)} placeholder="Corpo da mensagem *" rows={2}
+              className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none border border-[#3b4a54] focus:border-[#00a884] placeholder-[#8696a0] transition resize-none" />
+            <input value={iFooter} onChange={e => setIFooter(e.target.value)} placeholder="Rodapé (opcional)"
+              className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none border border-[#3b4a54] focus:border-[#00a884] placeholder-[#8696a0] transition" />
+            {interactiveTab === 'buttons' ? (
+              <div className="space-y-1.5">
+                <p className="text-[#8696a0] text-[10px] uppercase tracking-wide">Botões (máx. 3)</p>
+                {iButtons.map((btn, i) => (
+                  <div key={btn.id} className="flex gap-1.5">
+                    <input value={btn.text} onChange={e => setIButtons(prev => prev.map((b, j) => j === i ? { ...b, text: e.target.value } : b))}
+                      placeholder={`Botão ${i + 1}`}
+                      className="flex-1 bg-[#2a3942] text-[#e9edef] text-xs rounded px-2 py-1.5 outline-none border border-[#3b4a54] focus:border-[#00a884] placeholder-[#8696a0] transition" />
+                    {iButtons.length > 1 && (
+                      <button onClick={() => setIButtons(prev => prev.filter((_, j) => j !== i))} className="text-[#8696a0] hover:text-red-400 transition px-1">×</button>
+                    )}
+                  </div>
+                ))}
+                {iButtons.length < 3 && (
+                  <button onClick={() => setIButtons(prev => [...prev, { id: String(Date.now()), text: '' }])}
+                    className="text-[#8696a0] hover:text-white text-xs transition">+ Adicionar botão</button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <input value={iListBtn} onChange={e => setIListBtn(e.target.value)} placeholder="Texto do botão principal *"
+                  className="w-full bg-[#2a3942] text-[#e9edef] text-xs rounded px-2 py-1.5 outline-none border border-[#3b4a54] focus:border-[#00a884] placeholder-[#8696a0] transition" />
+                {iSections.map((sec, si) => (
+                  <div key={si} className="bg-[#0b141a] rounded-lg p-2 space-y-1.5">
+                    <input value={sec.title} onChange={e => setISections(prev => prev.map((s, j) => j === si ? { ...s, title: e.target.value } : s))}
+                      placeholder="Título da seção" className="w-full bg-[#2a3942] text-[#e9edef] text-xs rounded px-2 py-1 outline-none border border-[#3b4a54] placeholder-[#8696a0] transition" />
+                    {sec.rows.map((row, ri) => (
+                      <input key={row.id} value={row.title}
+                        onChange={e => setISections(prev => prev.map((s, j) => j === si ? { ...s, rows: s.rows.map((r, k) => k === ri ? { ...r, title: e.target.value } : r) } : s))}
+                        placeholder={`Item ${ri + 1}`} className="w-full bg-[#2a3942] text-[#e9edef] text-xs rounded px-2 py-1 outline-none border border-[#3b4a54] placeholder-[#8696a0] transition" />
+                    ))}
+                    <button onClick={() => setISections(prev => prev.map((s, j) => j === si ? { ...s, rows: [...s.rows, { id: String(Date.now()), title: '' }] } : s))}
+                      className="text-[#8696a0] hover:text-white text-xs transition">+ Item</button>
+                  </div>
+                ))}
+                <button onClick={() => setISections(prev => [...prev, { title: '', rows: [{ id: String(Date.now()), title: '' }] }])}
+                  className="text-[#8696a0] hover:text-white text-xs transition">+ Seção</button>
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={sendInteractive} disabled={!iBody.trim() || sendingInteractive}
+                className="flex-1 bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#2a3942] disabled:text-[#8696a0] text-white text-xs font-medium py-2 rounded-lg transition">
+                {sendingInteractive ? 'Enviando...' : 'Enviar'}
+              </button>
+              <button onClick={() => setShowInteractive(false)}
+                className="px-3 py-2 text-xs text-[#8696a0] hover:text-white border border-[#3b4a54] rounded-lg transition">Cancelar</button>
+            </div>
+          </div>
         </div>
       )}
 

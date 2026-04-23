@@ -71,6 +71,67 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Google Ads Conversions API
+  let google_sent = false
+  const gadsCustomerId = process.env.GOOGLE_ADS_CUSTOMER_ID
+  const gadsDeveloperToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+  const gadsConversionActionId = process.env.GOOGLE_ADS_CONVERSION_ACTION_ID
+  const gadsRefreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN
+  const gadsClientId = process.env.GOOGLE_ADS_CLIENT_ID
+  const gadsClientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET
+
+  if (gadsCustomerId && gadsDeveloperToken && gadsConversionActionId && gadsRefreshToken && gadsClientId && gadsClientSecret) {
+    try {
+      // Obtém access token via OAuth2
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: gadsClientId,
+          client_secret: gadsClientSecret,
+          refresh_token: gadsRefreshToken,
+          grant_type: 'refresh_token',
+        }),
+      })
+      const tokenData = await tokenRes.json()
+      const accessToken = tokenData.access_token
+
+      if (accessToken) {
+        const phone = contact.phone.replace(/\D/g, '')
+        const gadsPayload = {
+          conversions: [
+            {
+              conversionAction: `customers/${gadsCustomerId}/conversionActions/${gadsConversionActionId}`,
+              conversionDateTime: new Date(eventTime * 1000).toISOString().replace('T', ' ').replace(/\.\d+Z$/, '+00:00'),
+              conversionValue: value ?? 0,
+              currencyCode: currency ?? 'BRL',
+              userIdentifiers: [{ hashedPhoneNumber: phone }],
+            },
+          ],
+        }
+        const gadsRes = await fetch(
+          `https://googleads.googleapis.com/v17/customers/${gadsCustomerId}:uploadClickConversions`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+              'developer-token': gadsDeveloperToken,
+            },
+            body: JSON.stringify(gadsPayload),
+          }
+        )
+        google_sent = gadsRes.ok
+        if (!gadsRes.ok) {
+          const errText = await gadsRes.text()
+          console.error('Google Ads Conversions API error:', errText)
+        }
+      }
+    } catch (e) {
+      console.error('Google Ads integration error:', e)
+    }
+  }
+
   const { data: conversion, error: insertError } = await db
     .from('conversion_events')
     .insert({
@@ -87,5 +148,5 @@ export async function POST(req: NextRequest) {
 
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
 
-  return NextResponse.json({ success: true, meta_sent, conversion })
+  return NextResponse.json({ success: true, meta_sent, google_sent, conversion })
 }

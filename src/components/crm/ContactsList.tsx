@@ -461,6 +461,13 @@ function ChatPanelWithTags({
   )
 }
 
+type SavedFilter = {
+  name: string
+  tagId: string | null
+  type: 'all' | 'individual' | 'group'
+  instanceName: string
+}
+
 // ─── ContactsList (componente principal) ──────────────────────────────────────
 
 export function ContactsList({ funnels }: { funnels: { id: string; name: string; crm_stages: { id: string; name: string }[] }[] }) {
@@ -473,6 +480,14 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   const [allTags, setAllTags] = useState<Tag[]>([])
   const [contactTagsMap, setContactTagsMap] = useState<Record<string, Tag[]>>({})
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
+
+  // Filtros avançados
+  const [instances, setInstances] = useState<{ instance_name: string }[]>([])
+  const [filterType, setFilterType] = useState<'all' | 'individual' | 'group'>('all')
+  const [filterInstance, setFilterInstance] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([])
+  const [filterName, setFilterName] = useState('')
 
   // Modais
   const [showImport, setShowImport] = useState(false)
@@ -509,12 +524,39 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   useEffect(() => {
     load()
     fetchTags()
+    // Carrega instâncias e filtros salvos
+    fetch('/api/whatsapp/instance').then(r => r.json()).then(d => setInstances(d.instances ?? d ?? []))
+    try {
+      const saved = JSON.parse(localStorage.getItem('crm_saved_filters') || '[]')
+      setSavedFilters(saved)
+    } catch { /* ignore */ }
   }, [])
 
   // Carrega tags dos contatos visíveis quando lista muda
   useEffect(() => {
     contacts.forEach(c => fetchContactTags(c.id))
   }, [contacts])
+
+  function saveCurrentFilter() {
+    if (!filterName.trim()) return
+    const f: SavedFilter = { name: filterName.trim(), tagId: activeTagFilter, type: filterType, instanceName: filterInstance }
+    const updated = [...savedFilters.filter(s => s.name !== f.name), f]
+    setSavedFilters(updated)
+    localStorage.setItem('crm_saved_filters', JSON.stringify(updated))
+    setFilterName('')
+  }
+
+  function applyFilter(f: SavedFilter) {
+    setActiveTagFilter(f.tagId)
+    setFilterType(f.type)
+    setFilterInstance(f.instanceName)
+  }
+
+  function deleteFilter(name: string) {
+    const updated = savedFilters.filter(s => s.name !== name)
+    setSavedFilters(updated)
+    localStorage.setItem('crm_saved_filters', JSON.stringify(updated))
+  }
 
   const filtered = contacts.filter(c => {
     const matchSearch =
@@ -523,8 +565,11 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     if (!matchSearch) return false
     if (activeTagFilter) {
       const tags = contactTagsMap[c.id] ?? []
-      return tags.some(t => t.id === activeTagFilter)
+      if (!tags.some(t => t.id === activeTagFilter)) return false
     }
+    if (filterType === 'individual' && isGroup(c)) return false
+    if (filterType === 'group' && !isGroup(c)) return false
+    if (filterInstance && c.instance_name !== filterInstance) return false
     return true
   })
 
@@ -553,6 +598,16 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </button>
+            {/* Botão filtros */}
+            <button
+              onClick={() => setShowFilters(v => !v)}
+              title="Filtros avançados"
+              className={`text-[#8696a0] hover:text-white transition p-1 ${showFilters ? 'text-[#00a884]' : ''}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
             </button>
             {/* Botão gerenciar tags */}
@@ -612,6 +667,50 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               />
             </div>
           </div>
+
+          {/* Filtros avançados */}
+          {showFilters && (
+            <div className="px-3 py-3 bg-[#111b21] border-b border-[#222e35] space-y-2">
+              <div className="flex gap-1.5">
+                {(['all', 'individual', 'group'] as const).map(t => (
+                  <button key={t} onClick={() => setFilterType(t)}
+                    className={`flex-1 py-1 rounded text-[10px] font-medium transition ${filterType === t ? 'bg-[#00a884] text-white' : 'bg-[#202c33] text-[#8696a0]'}`}>
+                    {t === 'all' ? 'Todos' : t === 'individual' ? 'Individual' : 'Grupos'}
+                  </button>
+                ))}
+              </div>
+              {instances.length > 1 && (
+                <select value={filterInstance} onChange={e => setFilterInstance(e.target.value)}
+                  className="w-full bg-[#202c33] text-[#e9edef] text-xs rounded px-2 py-1.5 outline-none border border-[#2a3942] transition">
+                  <option value="">Todas as instâncias</option>
+                  {instances.map(i => <option key={i.instance_name} value={i.instance_name}>{i.instance_name}</option>)}
+                </select>
+              )}
+              <div className="flex gap-1.5">
+                <input value={filterName} onChange={e => setFilterName(e.target.value)}
+                  placeholder="Nome do filtro..."
+                  className="flex-1 bg-[#202c33] text-[#e9edef] text-xs rounded px-2 py-1.5 outline-none border border-[#2a3942] placeholder-[#8696a0] transition" />
+                <button onClick={saveCurrentFilter} disabled={!filterName.trim()}
+                  className="px-2 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-[10px] rounded transition font-medium">
+                  Salvar
+                </button>
+                <button onClick={() => { setFilterType('all'); setFilterInstance(''); setActiveTagFilter(null) }}
+                  className="px-2 py-1.5 text-[#8696a0] hover:text-white text-[10px] border border-[#2a3942] rounded transition">
+                  Limpar
+                </button>
+              </div>
+              {savedFilters.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {savedFilters.map(f => (
+                    <div key={f.name} className="flex items-center gap-0.5 bg-[#2a3942] rounded px-2 py-0.5">
+                      <button onClick={() => applyFilter(f)} className="text-[#e9edef] text-[10px] hover:text-[#00a884] transition">{f.name}</button>
+                      <button onClick={() => deleteFilter(f.name)} className="text-[#8696a0] hover:text-red-400 transition text-xs leading-none ml-0.5">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Contact list */}
           <div className="flex-1 overflow-y-auto">

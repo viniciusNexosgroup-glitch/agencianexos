@@ -5,11 +5,13 @@ import { InstanceManager } from '@/components/crm/InstanceManager'
 import { ContactsList } from '@/components/crm/ContactsList'
 import { FunnelManager } from '@/components/crm/FunnelManager'
 import { BroadcastManager } from '@/components/crm/BroadcastManager'
-
-type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia'
 import { SupervisorDashboard } from '@/components/crm/SupervisorDashboard'
 import { FlowBuilder } from '@/components/crm/FlowBuilder'
 import { AIAgentManager } from '@/components/crm/AIAgentManager'
+import { DepartmentManager } from '@/components/crm/DepartmentManager'
+import { HSMTemplates } from '@/components/crm/HSMTemplates'
+
+type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia' | 'departamentos' | 'templates'
 
 function supabase() {
   return createClient(
@@ -59,6 +61,12 @@ export default async function CrmPage({ searchParams }: { searchParams: { tab?: 
         )}
         {tab === 'ia' && (
           <AIAgentManager />
+        )}
+        {tab === 'departamentos' && (
+          <DepartmentManager />
+        )}
+        {tab === 'templates' && (
+          <HSMTemplates />
         )}
       </div>
     </div>

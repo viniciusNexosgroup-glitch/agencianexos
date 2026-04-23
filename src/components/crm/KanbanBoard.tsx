@@ -318,6 +318,8 @@ function EditLeadModal({ lead, onClose, onSaved, onDeleted }: {
   const [value, setValue] = useState(String(lead.value ?? 0))
   const [notes, setNotes] = useState(lead.notes ?? '')
   const [saving, setSaving] = useState(false)
+  const [markingWon, setMarkingWon] = useState(false)
+  const [wonSuccess, setWonSuccess] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -345,6 +347,25 @@ function EditLeadModal({ lead, onClose, onSaved, onDeleted }: {
     await fetch(`/api/whatsapp/leads?id=${lead.id}`, { method: 'DELETE' })
     onDeleted(lead.id)
     onClose()
+  }
+
+  async function markAsWon() {
+    if (markingWon || !lead.contact_id) return
+    setMarkingWon(true)
+    await fetch('/api/whatsapp/conversions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contact_id: lead.contact_id,
+        lead_id: lead.id,
+        event_name: 'Purchase',
+        value: Number(value) || lead.value || 0,
+        currency: 'BRL',
+      }),
+    })
+    setMarkingWon(false)
+    setWonSuccess(true)
+    setTimeout(() => setWonSuccess(false), 2000)
   }
 
   return (
@@ -388,17 +409,46 @@ function EditLeadModal({ lead, onClose, onSaved, onDeleted }: {
             />
           </div>
         </div>
-        <div className="flex gap-3 px-6 pb-6">
-          <button
-            onClick={save}
-            disabled={saving}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-medium py-2.5 rounded-lg transition"
-          >
-            {saving ? 'Salvando...' : 'Salvar'}
-          </button>
-          <button onClick={deleteLead} className="px-4 py-2.5 text-sm text-red-400 hover:text-red-300 border border-red-900 rounded-lg transition">
-            Excluir
-          </button>
+        <div className="flex gap-3 px-6 pb-6 flex-col">
+          <div className="flex gap-3">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-medium py-2.5 rounded-lg transition"
+            >
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+            <button onClick={deleteLead} className="px-4 py-2.5 text-sm text-red-400 hover:text-red-300 border border-red-900 rounded-lg transition">
+              Excluir
+            </button>
+          </div>
+          {lead.contact_id && (
+            <button
+              onClick={markAsWon}
+              disabled={markingWon}
+              className={`w-full py-2.5 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                wonSuccess
+                  ? 'bg-green-600 text-white'
+                  : 'bg-green-900/30 hover:bg-green-900/60 text-green-400 border border-green-800'
+              }`}
+            >
+              {wonSuccess ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Venda registrada!
+                </>
+              ) : markingWon ? 'Registrando...' : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Registrar como venda (Meta Conversions)
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>
