@@ -22,12 +22,9 @@ function sleep(ms: number) {
 }
 
 async function warmupGroup(instanceName: string, groupJid: string) {
-  // Força Baileys a carregar participantes e chaves do grupo
-  await evFetch(`/group/fetchAllGroups/${instanceName}?getParticipants=true`).catch(() => null)
-  // Quando not-acceptable ocorre, o Baileys internamente tenta distribuir as chaves —
-  // aguarda tempo suficiente para isso completar antes do retry
-  await sleep(5000)
-  console.log(`[send] warm-up concluído para ${groupJid}`)
+  // Força Baileys a carregar participantes e chaves do grupo (sem sleep — não bloqueia o UI)
+  evFetch(`/group/fetchAllGroups/${instanceName}?getParticipants=true`).catch(() => null)
+  console.log(`[send] warm-up disparado para ${groupJid} (assíncrono)`)
 }
 
 export async function POST(req: NextRequest) {
@@ -90,7 +87,7 @@ export async function POST(req: NextRequest) {
     const detail = Array.isArray(msgs) ? msgs.flat().join(', ') : String(msgs ?? '')
     const errMsg = detail || result?.message as string || result?.error as string || JSON.stringify(result)
     if (errMsg.includes('not-acceptable')) {
-      return NextResponse.json({ error: 'Não foi possível enviar ao grupo. Aguarde um momento e tente novamente — o WhatsApp pode estar sincronizando as chaves do grupo.' }, { status: 400 })
+      return NextResponse.json({ error: 'Chaves do grupo sendo sincronizadas. Clique em enviar novamente.' }, { status: 400 })
     }
     return NextResponse.json({ error: errMsg }, { status: 500 })
   }
