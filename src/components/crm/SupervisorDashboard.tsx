@@ -12,10 +12,9 @@ interface DayMetrics {
 interface AgentReport {
   agent_id: string
   agent_name: string
-  messages_sent: number
-  contacts_attended: number
-  avg_response_time_min: number
-  avg_csat: number
+  total_messages: number
+  total_contacts: number
+  avg_response_time_minutes: number | null
 }
 
 interface UnansweredContact {
@@ -26,7 +25,7 @@ interface UnansweredContact {
   instance_name: string
 }
 
-type SortKey = keyof Omit<AgentReport, 'agent_id' | 'agent_name'>
+type SortKey = 'total_messages' | 'total_contacts' | 'avg_response_time_minutes'
 type SortDir = 'asc' | 'desc'
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
@@ -53,7 +52,7 @@ export function SupervisorDashboard() {
   const [agents, setAgents] = useState<AgentReport[]>([])
   const [unanswered, setUnanswered] = useState<UnansweredContact[]>([])
   const [loading, setLoading] = useState(true)
-  const [sortKey, setSortKey] = useState<SortKey>('messages_sent')
+  const [sortKey, setSortKey] = useState<SortKey>('total_messages')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
@@ -99,8 +98,8 @@ export function SupervisorDashboard() {
   }
 
   const sortedAgents = [...agents].sort((a, b) => {
-    const av = a[sortKey] as number
-    const bv = b[sortKey] as number
+    const av = (a[sortKey] ?? 0) as number
+    const bv = (b[sortKey] ?? 0) as number
     return sortDir === 'asc' ? av - bv : bv - av
   })
 
@@ -173,10 +172,9 @@ export function SupervisorDashboard() {
                     <th className="text-left px-4 py-3 text-slate-400 font-medium">Nome</th>
                     {(
                       [
-                        ['messages_sent', 'Msgs enviadas'],
-                        ['contacts_attended', 'Contatos atendidos'],
-                        ['avg_response_time_min', 'Tempo médio resposta'],
-                        ['avg_csat', 'CSAT médio'],
+                        ['total_messages', 'Msgs enviadas'],
+                        ['total_contacts', 'Contatos atendidos'],
+                        ['avg_response_time_minutes', 'Tempo médio resposta'],
                       ] as [SortKey, string][]
                     ).map(([key, label]) => (
                       <th
@@ -201,23 +199,10 @@ export function SupervisorDashboard() {
                     sortedAgents.map(a => (
                       <tr key={a.agent_id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition">
                         <td className="px-4 py-3 text-white font-medium">{a.agent_name}</td>
-                        <td className="px-4 py-3 text-right text-slate-300">{a.messages_sent.toLocaleString('pt-BR')}</td>
-                        <td className="px-4 py-3 text-right text-slate-300">{a.contacts_attended.toLocaleString('pt-BR')}</td>
+                        <td className="px-4 py-3 text-right text-slate-300">{(a.total_messages ?? 0).toLocaleString('pt-BR')}</td>
+                        <td className="px-4 py-3 text-right text-slate-300">{(a.total_contacts ?? 0).toLocaleString('pt-BR')}</td>
                         <td className="px-4 py-3 text-right text-slate-300">
-                          {Math.round(a.avg_response_time_min)}min
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span
-                            className={`font-medium ${
-                              a.avg_csat >= 4
-                                ? 'text-green-400'
-                                : a.avg_csat >= 3
-                                ? 'text-yellow-400'
-                                : 'text-red-400'
-                            }`}
-                          >
-                            {a.avg_csat.toFixed(1)}
-                          </span>
+                          {a.avg_response_time_minutes != null ? `${Math.round(a.avg_response_time_minutes)}min` : '—'}
                         </td>
                       </tr>
                     ))
