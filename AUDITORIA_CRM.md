@@ -55,15 +55,3 @@ Estas funcionalidades já estão implementadas no código mas precisam de config
    - `GOOGLE_ADS_CLIENT_ID`
    - `GOOGLE_ADS_CLIENT_SECRET`
 
-### Supabase — SQL pendente
-Execute no SQL Editor do Supabase (se ainda não fez):
-```sql
-UPDATE crm_stages SET position = position + 1;
-
-INSERT INTO crm_stages (funnel_id, name, position)
-SELECT id, 'Lead', 0
-FROM crm_funnels
-WHERE id NOT IN (
-  SELECT funnel_id FROM crm_stages WHERE name = 'Lead' AND position = 0
-);
-```
