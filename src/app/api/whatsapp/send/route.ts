@@ -50,28 +50,34 @@ export async function POST(req: NextRequest) {
   const isGroup = phone.includes('@g.us')
   const number = isGroup ? phone : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
-  // Para grupos: aquece a sessão do Baileys antes de tentar enviar
-  if (isGroup) {
-    try {
-      await evFetch(`/group/fetchAllGroups/${instanceName}?getParticipants=false`)
-    } catch {
-      // ignora erro no warm-up, tenta enviar mesmo assim
-    }
+  console.log(`[send] isGroup=${isGroup} number=${number} instance=${instanceName}`)
+
+  // Tenta enviar com formato v2 primeiro; se falhar com 400, tenta formato v1
+  async function trySend(payload: object) {
+    return evFetch(`/message/sendText/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   }
 
-  const res = await evFetch(`/message/sendText/${instanceName}`, {
-    method: 'POST',
-    body: JSON.stringify({ number, textMessage: { text } }),
-  })
+  let res = await trySend({ number, text })
+  let result = await res.json()
+  console.log(`[send v2] status=${res.status} number=${number} response=${JSON.stringify(result).slice(0, 300)}`)
 
-  const result = await res.json()
-  console.log(`send [${res.status}] ${number}:`, JSON.stringify(result).slice(0, 200))
+  // Fallback para formato v1 se o v2 retornar 400
+  if (!res.ok && res.status === 400) {
+    console.log('[send] Tentando formato v1 (textMessage.text)...')
+    res = await trySend({ number, textMessage: { text } })
+    result = await res.json()
+    console.log(`[send v1] status=${res.status} number=${number} response=${JSON.stringify(result).slice(0, 300)}`)
+  }
 
   if (!res.ok) {
     const inner = result?.response?.message
     const innerStr = Array.isArray(inner) ? inner.join(', ') : String(inner ?? '')
     const errMsg = result?.message || result?.error || innerStr || JSON.stringify(result)
-    return NextResponse.json({ error: errMsg }, { status: 500 })
+    // Retorna o número usado para facilitar debug
+    return NextResponse.json({ error: `[${number}] ${errMsg}` }, { status: 500 })
   }
 
   const { error: dbError } = await supabase().from('whatsapp_messages').insert({
