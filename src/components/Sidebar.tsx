@@ -1,6 +1,6 @@
 'use client'
 
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -30,10 +30,21 @@ const NAV = [
     ),
   },
   {
-    label: 'Leads',
-    href: '/dashboard?tab=kanban',
-    matchHref: '/dashboard',
-    exact: true,
+    label: 'Kanban',
+    href: '/dashboard/crm?tab=kanban',
+    matchHref: '/dashboard/crm',
+    matchTab: 'kanban',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+        <rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="15" rx="1"/>
+      </svg>
+    ),
+  },
+  {
+    label: 'Contatos',
+    href: '/dashboard/crm?tab=contatos',
+    matchHref: '/dashboard/crm',
+    matchTab: 'contatos',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
@@ -42,22 +53,61 @@ const NAV = [
     ),
   },
   {
-    label: 'Chats',
-    href: '/dashboard/crm?tab=contatos',
+    label: 'Instâncias',
+    href: '/dashboard/crm?tab=instancias',
     matchHref: '/dashboard/crm',
+    matchTab: 'instancias',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.18 6.18l1.1-.94a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7a2 2 0 0 1 1.72 2.03z"/>
       </svg>
     ),
   },
   {
-    label: 'Instâncias',
-    href: '/dashboard/crm?tab=instancias',
+    label: 'Broadcast',
+    href: '/dashboard/crm?tab=broadcast',
     matchHref: '/dashboard/crm',
+    matchTab: 'broadcast',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.18 6.18l1.1-.94a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7a2 2 0 0 1 1.72 2.03z"/>
+        <path d="M22 8.5c0 2.76-4.48 5-10 5S2 11.26 2 8.5 6.48 3.5 12 3.5s10 2.24 10 5z"/>
+        <path d="M2 8.5c0 2.76 4.48 5 10 5s10-2.24 10-5"/>
+        <path d="M2 12v3.5c0 2.76 4.48 5 10 5s10-2.24 10-5V12"/>
+      </svg>
+    ),
+  },
+  {
+    label: 'Supervisor',
+    href: '/dashboard/crm?tab=supervisor',
+    matchHref: '/dashboard/crm',
+    matchTab: 'supervisor',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+      </svg>
+    ),
+  },
+  {
+    label: 'Flows',
+    href: '/dashboard/crm?tab=flows',
+    matchHref: '/dashboard/crm',
+    matchTab: 'flows',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+        <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+      </svg>
+    ),
+  },
+  {
+    label: 'Agente IA',
+    href: '/dashboard/crm?tab=ia',
+    matchHref: '/dashboard/crm',
+    matchTab: 'ia',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+        <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        <circle cx="12" cy="16" r="1" fill="currentColor"/>
       </svg>
     ),
   },
@@ -171,6 +221,7 @@ function NotificationDropdown({
 
 export function Sidebar({ userName, isAdmin }: { userName: string; isAdmin: boolean }) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
 
   // Notificações
@@ -226,9 +277,18 @@ export function Sidebar({ userName, isAdmin }: { userName: string; isAdmin: bool
   }
 
   function isActive(item: typeof NAV[0]) {
-    const matchPath = (item as any).matchHref || item.href.split('?')[0]
-    if (item.exact && !(item as any).matchHref) return pathname === item.href.split('?')[0]
-    return pathname === matchPath || pathname.startsWith(matchPath + '/')
+    const i = item as any
+    const matchPath = i.matchHref || item.href.split('?')[0]
+    const onCorrectPath = pathname === matchPath || pathname.startsWith(matchPath + '/')
+
+    if (item.exact && !i.matchHref) return pathname === item.href.split('?')[0]
+
+    if (i.matchTab) {
+      const currentTab = searchParams.get('tab') ?? 'kanban'
+      return onCorrectPath && currentTab === i.matchTab
+    }
+
+    return onCorrectPath
   }
 
   const filtered = NAV.filter(i => !(i as any).adminOnly || isAdmin)
