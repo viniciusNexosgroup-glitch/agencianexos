@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Image from 'next/image'
 
 type Instance = {
   id: string
@@ -9,6 +8,34 @@ type Instance = {
   label: string
   status: 'connected' | 'disconnected'
   created_at: string
+}
+
+type DayConfig = {
+  enabled: boolean
+  open_time: string
+  close_time: string
+}
+
+type BusinessHours = {
+  [key: string]: DayConfig
+}
+
+const DAYS = [
+  { key: 'sun', label: 'Dom' },
+  { key: 'mon', label: 'Seg' },
+  { key: 'tue', label: 'Ter' },
+  { key: 'wed', label: 'Qua' },
+  { key: 'thu', label: 'Qui' },
+  { key: 'fri', label: 'Sex' },
+  { key: 'sat', label: 'Sáb' },
+]
+
+function defaultBusinessHours(): BusinessHours {
+  const result: BusinessHours = {}
+  for (const d of DAYS) {
+    result[d.key] = { enabled: d.key !== 'sun' && d.key !== 'sat', open_time: '09:00', close_time: '18:00' }
+  }
+  return result
 }
 
 function StatusDot({ status }: { status: string }) {
@@ -24,6 +51,19 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
   const [status, setStatus] = useState(instance.status)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+
+  // Horário de funcionamento
+  const [showBusinessHours, setShowBusinessHours] = useState(false)
+  const [businessHours, setBusinessHours] = useState<BusinessHours>(defaultBusinessHours())
+  const [awayMessage, setAwayMessage] = useState('')
+  const [savingHours, setSavingHours] = useState(false)
+  const [hoursSaved, setHoursSaved] = useState(false)
+
+  // Widget
+  const [showWidget, setShowWidget] = useState(false)
+  const [widgetCopied, setWidgetCopied] = useState(false)
+
+  const widgetCode = `<script src="https://dashboard.viniciusguilherme.shop/api/widget/${instance.instance_name}"></script>`
 
   async function fetchQr() {
     setLoadingQr(true)
@@ -80,6 +120,51 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
     onDelete()
   }
 
+  async function saveBusinessHours() {
+    setSavingHours(true)
+    try {
+      await fetch(`/api/whatsapp/instance/${instance.instance_name}/business-hours`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_hours: businessHours }),
+      })
+      if (awayMessage.trim()) {
+        await fetch(`/api/whatsapp/instance/${instance.instance_name}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ away_message: awayMessage }),
+        })
+      }
+      setHoursSaved(true)
+      setTimeout(() => setHoursSaved(false), 3000)
+    } catch {
+      // silencioso; pode adicionar setError se quiser
+    } finally {
+      setSavingHours(false)
+    }
+  }
+
+  function copyWidget() {
+    navigator.clipboard.writeText(widgetCode).then(() => {
+      setWidgetCopied(true)
+      setTimeout(() => setWidgetCopied(false), 2500)
+    })
+  }
+
+  function toggleDay(key: string) {
+    setBusinessHours(prev => ({
+      ...prev,
+      [key]: { ...prev[key], enabled: !prev[key].enabled },
+    }))
+  }
+
+  function setDayTime(key: string, field: 'open_time' | 'close_time', value: string) {
+    setBusinessHours(prev => ({
+      ...prev,
+      [key]: { ...prev[key], [field]: value },
+    }))
+  }
+
   useEffect(() => {
     if (status === 'disconnected') return
     const interval = setInterval(checkStatus, 10000)
@@ -88,6 +173,7 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      {/* Header do card */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <StatusDot status={status} />
@@ -96,7 +182,7 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
             <p className="text-slate-500 text-xs">{instance.instance_name}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={checkStatus} className="text-xs text-slate-400 hover:text-white transition px-2 py-1 rounded border border-slate-700">
             Verificar
           </button>
@@ -161,6 +247,121 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
               {syncMsg}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Botões de configuração extras */}
+      <div className="mt-3 flex gap-2 flex-wrap">
+        <button
+          onClick={() => { setShowBusinessHours(v => !v); setShowWidget(false) }}
+          className={`text-xs px-3 py-1.5 rounded-lg border transition font-medium ${
+            showBusinessHours
+              ? 'bg-slate-700 text-white border-slate-600'
+              : 'text-slate-400 hover:text-white border-slate-700 hover:border-slate-500'
+          }`}
+        >
+          {showBusinessHours ? '▲ Horário' : '⏰ Configurar Horário'}
+        </button>
+        <button
+          onClick={() => { setShowWidget(v => !v); setShowBusinessHours(false) }}
+          className={`text-xs px-3 py-1.5 rounded-lg border transition font-medium ${
+            showWidget
+              ? 'bg-slate-700 text-white border-slate-600'
+              : 'text-slate-400 hover:text-white border-slate-700 hover:border-slate-500'
+          }`}
+        >
+          {showWidget ? '▲ Widget' : '🌐 Widget para site'}
+        </button>
+      </div>
+
+      {/* Seção: Horário de funcionamento */}
+      {showBusinessHours && (
+        <div className="mt-3 bg-slate-800 rounded-xl p-3 border border-slate-700">
+          <p className="text-white text-xs font-semibold mb-3">Horário de funcionamento</p>
+          <div className="space-y-2">
+            {DAYS.map(({ key, label }) => (
+              <div key={key} className="flex items-center gap-2">
+                <button
+                  onClick={() => toggleDay(key)}
+                  className={`w-16 text-xs text-center py-1 rounded font-medium border transition flex-shrink-0 ${
+                    businessHours[key].enabled
+                      ? 'bg-indigo-700 border-indigo-600 text-white'
+                      : 'bg-slate-700 border-slate-600 text-slate-400'
+                  }`}
+                >
+                  {label}
+                </button>
+                {businessHours[key].enabled ? (
+                  <>
+                    <input
+                      type="time"
+                      value={businessHours[key].open_time}
+                      onChange={e => setDayTime(key, 'open_time', e.target.value)}
+                      className="flex-1 bg-slate-700 text-white text-xs rounded px-2 py-1 outline-none border border-slate-600 focus:border-indigo-500 transition"
+                    />
+                    <span className="text-slate-500 text-xs">até</span>
+                    <input
+                      type="time"
+                      value={businessHours[key].close_time}
+                      onChange={e => setDayTime(key, 'close_time', e.target.value)}
+                      className="flex-1 bg-slate-700 text-white text-xs rounded px-2 py-1 outline-none border border-slate-600 focus:border-indigo-500 transition"
+                    />
+                  </>
+                ) : (
+                  <span className="text-slate-600 text-xs">Fechado</span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3">
+            <label className="text-slate-400 text-xs block mb-1">Mensagem de ausência</label>
+            <textarea
+              value={awayMessage}
+              onChange={e => setAwayMessage(e.target.value)}
+              placeholder="Ex: Estamos fora do horário. Retornaremos em breve!"
+              rows={2}
+              className="w-full bg-slate-700 text-white text-xs rounded-lg px-3 py-2 outline-none border border-slate-600 focus:border-indigo-500 transition resize-none placeholder-slate-500"
+            />
+          </div>
+
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={saveBusinessHours}
+              disabled={savingHours}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs py-2 rounded-lg transition font-medium"
+            >
+              {savingHours ? 'Salvando...' : 'Salvar horários'}
+            </button>
+            {hoursSaved && (
+              <span className="text-green-400 text-xs">Salvo!</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Seção: Widget para site */}
+      {showWidget && (
+        <div className="mt-3 bg-slate-800 rounded-xl p-3 border border-slate-700">
+          <p className="text-white text-xs font-semibold mb-1">Widget de WhatsApp para o site</p>
+          <p className="text-slate-400 text-xs mb-3">
+            Adicione o código abaixo antes do fechamento do <code className="bg-slate-700 px-1 rounded text-slate-300">&lt;/body&gt;</code> no seu site.
+          </p>
+          <div className="relative">
+            <pre className="bg-slate-900 text-slate-300 text-xs rounded-lg p-3 overflow-x-auto border border-slate-700 leading-relaxed whitespace-pre-wrap break-all">
+              {widgetCode}
+            </pre>
+            <button
+              onClick={copyWidget}
+              className={`mt-2 w-full text-xs py-2 rounded-lg border transition font-medium ${
+                widgetCopied
+                  ? 'bg-green-800 border-green-700 text-green-300'
+                  : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-slate-300 hover:text-white'
+              }`}
+            >
+              {widgetCopied ? '✓ Código copiado!' : 'Copiar código'}
+            </button>
+          </div>
         </div>
       )}
     </div>

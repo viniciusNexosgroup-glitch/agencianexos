@@ -4,7 +4,11 @@ import { redirect } from 'next/navigation'
 import { InstanceManager } from '@/components/crm/InstanceManager'
 import { ContactsList } from '@/components/crm/ContactsList'
 import { FunnelManager } from '@/components/crm/FunnelManager'
-import { CrmTabs } from '@/components/crm/CrmTabs'
+import { CrmTabs, type CrmTab } from '@/components/crm/CrmTabs'
+import { BroadcastManager } from '@/components/crm/BroadcastManager'
+import { SupervisorDashboard } from '@/components/crm/SupervisorDashboard'
+import { FlowBuilder } from '@/components/crm/FlowBuilder'
+import { AIAgentManager } from '@/components/crm/AIAgentManager'
 
 function supabase() {
   return createClient(
@@ -18,7 +22,7 @@ export default async function CrmPage({ searchParams }: { searchParams: { tab?: 
   const session = await getSession()
   if (!session) redirect('/login')
 
-  const tab = searchParams.tab || 'kanban'
+  const tab = (searchParams.tab || 'kanban') as CrmTab
   const db = supabase()
 
   const { data: funnels } = await db
@@ -33,7 +37,7 @@ export default async function CrmPage({ searchParams }: { searchParams: { tab?: 
         <p className="text-slate-500 text-sm mt-1">Gerencie leads e conversas do WhatsApp</p>
       </div>
 
-      <CrmTabs active={tab as any} />
+      <CrmTabs active={tab} />
 
       <div className={tab === 'contatos' ? 'mt-4' : 'mt-6'}>
         {tab === 'kanban' && (
@@ -44,6 +48,18 @@ export default async function CrmPage({ searchParams }: { searchParams: { tab?: 
         )}
         {tab === 'instancias' && (
           <InstanceManager />
+        )}
+        {tab === 'broadcast' && (
+          <BroadcastManager />
+        )}
+        {tab === 'supervisor' && (
+          <SupervisorDashboard />
+        )}
+        {tab === 'flows' && (
+          <FlowBuilder />
+        )}
+        {tab === 'ia' && (
+          <AIAgentManager />
         )}
       </div>
     </div>

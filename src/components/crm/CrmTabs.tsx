@@ -3,12 +3,18 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 
 const TABS = [
-  { key: 'kanban', label: 'Kanban' },
-  { key: 'contatos', label: 'Contatos' },
-  { key: 'instancias', label: 'Instâncias WhatsApp' },
+  { key: 'kanban',     label: 'Kanban' },
+  { key: 'contatos',   label: 'Contatos' },
+  { key: 'instancias', label: 'Instâncias' },
+  { key: 'broadcast',  label: 'Broadcast' },
+  { key: 'supervisor', label: 'Supervisor' },
+  { key: 'flows',      label: 'Flows' },
+  { key: 'ia',         label: 'Agente IA' },
 ]
 
-export function CrmTabs({ active }: { active: 'kanban' | 'contatos' | 'instancias' }) {
+export type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia'
+
+export function CrmTabs({ active }: { active: CrmTab }) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -19,7 +25,7 @@ export function CrmTabs({ active }: { active: 'kanban' | 'contatos' | 'instancia
   }
 
   return (
-    <div className="flex gap-1 bg-[#0d1117] border border-slate-800 rounded-xl p-1 w-fit">
+    <div className="flex gap-1 flex-wrap bg-[#0d1117] border border-slate-800 rounded-xl p-1 w-fit">
       {TABS.map(t => (
         <button
           key={t.key}

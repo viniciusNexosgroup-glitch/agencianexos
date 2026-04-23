@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 
 type Message = {
   id: string
@@ -10,6 +10,7 @@ type Message = {
   message_type: string
   participant_name?: string | null
   participant_jid?: string | null
+  is_internal?: boolean
 }
 
 type Contact = {
@@ -18,6 +19,19 @@ type Contact = {
   phone: string
   instance_name: string
   remote_jid?: string | null
+}
+
+type QuickReply = {
+  id: string
+  shortcut: string
+  content: string
+}
+
+type ScheduledMessage = {
+  id: string
+  body: string
+  send_at: string
+  status: string
 }
 
 const AVATAR_COLORS = [
@@ -63,6 +77,20 @@ function groupMessagesByDate(messages: Message[]) {
   return groups
 }
 
+function highlightText(text: string, query: string) {
+  if (!query.trim()) return <>{text}</>
+  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase()
+          ? <mark key={i} className="bg-yellow-400 text-black rounded-sm px-0.5">{part}</mark>
+          : part
+      )}
+    </>
+  )
+}
+
 export function ChatPanel({
   contact,
   onClose,
@@ -80,6 +108,28 @@ export function ChatPanel({
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  // Quick Replies
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([])
+  const [showQuickReplies, setShowQuickReplies] = useState(false)
+  const [qrLoading, setQrLoading] = useState(false)
+  const [qrSelected, setQrSelected] = useState(0)
+  const quickRepliesRef = useRef<HTMLDivElement>(null)
+
+  // Notas internas
+  const [isInternal, setIsInternal] = useState(false)
+
+  // Agendamento
+  const [showSchedule, setShowSchedule] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState('')
+  const [scheduling, setScheduling] = useState(false)
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([])
+  const [loadingScheduled, setLoadingScheduled] = useState(false)
+
+  // Busca no histórico
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => {
     setMessages([])
     setLoading(true)
@@ -93,11 +143,97 @@ export function ChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    if (showSearch && searchInputRef.current) {
+      searchInputRef.current.focus()
+    }
+  }, [showSearch])
+
+  useEffect(() => {
+    if (showSchedule) {
+      loadScheduled()
+    }
+  }, [showSchedule, contact.id])
+
+  // Fechar dropdown de quick replies ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (quickRepliesRef.current && !quickRepliesRef.current.contains(e.target as Node)) {
+        setShowQuickReplies(false)
+      }
+    }
+    if (showQuickReplies) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showQuickReplies])
+
   async function load() {
     const res = await fetch(`/api/whatsapp/messages?contact_id=${contact.id}`)
     const data = await res.json()
     setMessages(data.messages ?? [])
     setLoading(false)
+  }
+
+  async function loadQuickReplies() {
+    setQrLoading(true)
+    try {
+      const res = await fetch('/api/whatsapp/quick-replies')
+      const data = await res.json()
+      setQuickReplies(data.quickReplies ?? data ?? [])
+    } catch {
+      setQuickReplies([])
+    } finally {
+      setQrLoading(false)
+    }
+  }
+
+  async function loadScheduled() {
+    setLoadingScheduled(true)
+    try {
+      const res = await fetch(`/api/whatsapp/scheduled?contact_id=${contact.id}`)
+      const data = await res.json()
+      setScheduledMessages(data.scheduled ?? [])
+    } catch {
+      setScheduledMessages([])
+    } finally {
+      setLoadingScheduled(false)
+    }
+  }
+
+  async function cancelScheduled(id: string) {
+    await fetch(`/api/whatsapp/scheduled?id=${id}`, { method: 'DELETE' })
+    setScheduledMessages(prev => prev.filter(s => s.id !== id))
+  }
+
+  async function scheduleMessage() {
+    if (!text.trim() || !scheduleAt || scheduling) return
+    setScheduling(true)
+    try {
+      const res = await fetch('/api/whatsapp/scheduled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_id: contact.id,
+          instance_name: contact.instance_name,
+          body: text.trim(),
+          send_at: new Date(scheduleAt).toISOString(),
+        }),
+      })
+      const data = await res.json()
+      if (!data.error) {
+        setText('')
+        setScheduleAt('')
+        setShowSchedule(false)
+        await loadScheduled()
+      } else {
+        setError(data.error)
+      }
+    } catch {
+      setError('Erro ao agendar mensagem.')
+    } finally {
+      setScheduling(false)
+    }
   }
 
   async function send() {
@@ -113,6 +249,7 @@ export function ChatPanel({
       body,
       timestamp: new Date().toISOString(),
       message_type: 'text',
+      is_internal: isInternal,
     }
     setMessages(prev => [...prev, optimistic])
 
@@ -125,6 +262,7 @@ export function ChatPanel({
           contactId: contact.id,
           phone: contact.remote_jid || contact.phone,
           text: body,
+          is_internal: isInternal,
         }),
       })
       const result = await res.json()
@@ -144,14 +282,80 @@ export function ChatPanel({
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Navegar no dropdown de quick replies
+    if (showQuickReplies) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setQrSelected(s => Math.min(s + 1, filteredQR.length - 1))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setQrSelected(s => Math.max(s - 1, 0))
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (filteredQR[qrSelected]) selectQuickReply(filteredQR[qrSelected])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowQuickReplies(false)
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       send()
     }
   }
 
-  const grouped = groupMessagesByDate(messages)
+  function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value
+    setText(val)
+
+    if (val === '/' || val.startsWith('/')) {
+      if (!showQuickReplies) {
+        setShowQuickReplies(true)
+        setQrSelected(0)
+        if (quickReplies.length === 0) loadQuickReplies()
+      }
+    } else {
+      setShowQuickReplies(false)
+    }
+  }
+
+  function selectQuickReply(qr: QuickReply) {
+    setText(qr.content)
+    setShowQuickReplies(false)
+    setQrSelected(0)
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+        const len = qr.content.length
+        inputRef.current.setSelectionRange(len, len)
+        inputRef.current.style.height = 'auto'
+        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 128) + 'px'
+      }
+    }, 0)
+  }
+
+  const searchTerm = text.startsWith('/') ? text.slice(1).toLowerCase() : ''
+  const filteredQR = searchTerm
+    ? quickReplies.filter(q =>
+        q.shortcut.toLowerCase().includes(searchTerm) ||
+        q.content.toLowerCase().includes(searchTerm)
+      )
+    : quickReplies
+
+  const displayedMessages = searchQuery.trim()
+    ? messages.filter(m => m.body?.toLowerCase().includes(searchQuery.toLowerCase()))
+    : messages
+
+  const grouped = groupMessagesByDate(displayedMessages)
   const isGroup = contact.remote_jid?.endsWith('@g.us') || contact.phone?.includes('@g.us')
 
   return (
@@ -173,12 +377,61 @@ export function ChatPanel({
           }
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white font-medium text-sm truncate">{contact.name}</p>
-          <p className="text-[#8696a0] text-xs truncate">
-            {isGroup ? 'Grupo' : contact.phone}
+          {showSearch ? (
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Buscar nas mensagens..."
+              className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded px-3 py-1 outline-none placeholder-[#8696a0]"
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  setShowSearch(false)
+                  setSearchQuery('')
+                }
+              }}
+            />
+          ) : (
+            <>
+              <p className="text-white font-medium text-sm truncate">{contact.name}</p>
+              <p className="text-[#8696a0] text-xs truncate">
+                {isGroup ? 'Grupo' : contact.phone}
+              </p>
+            </>
+          )}
+        </div>
+        {/* Botão de busca */}
+        <button
+          onClick={() => {
+            setShowSearch(v => !v)
+            if (showSearch) setSearchQuery('')
+          }}
+          className={`p-1.5 rounded-full transition ${showSearch ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+          title="Buscar mensagens"
+        >
+          {showSearch ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      {/* Busca ativa: badge com contagem */}
+      {showSearch && searchQuery && (
+        <div className="bg-[#2a3942] px-4 py-1.5 flex-shrink-0">
+          <p className="text-[#8696a0] text-xs">
+            {displayedMessages.length === 0
+              ? 'Nenhuma mensagem encontrada'
+              : `${displayedMessages.length} mensagem(ns) encontrada(s)`}
           </p>
         </div>
-      </div>
+      )}
 
       {/* Messages */}
       <div
@@ -198,6 +451,13 @@ export function ChatPanel({
             </span>
           </div>
         )}
+        {!loading && messages.length > 0 && displayedMessages.length === 0 && searchQuery && (
+          <div className="flex justify-center my-4">
+            <span className="bg-[#182229] text-[#8696a0] text-xs px-4 py-2 rounded-lg">
+              Nenhuma mensagem corresponde à busca
+            </span>
+          </div>
+        )}
 
         {grouped.map(group => (
           <div key={group.date}>
@@ -211,25 +471,39 @@ export function ChatPanel({
               const showSender = isGroup && !msg.from_me && senderName &&
                 (idx === 0 || group.messages[idx - 1].participant_jid !== msg.participant_jid || group.messages[idx - 1].from_me)
               const color = senderName ? senderColor(senderName) : '#8696a0'
+              const isIntMsg = msg.is_internal
 
               return (
                 <div key={msg.id} className={`flex mb-1 ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[65%] px-3 py-2 rounded-lg shadow-sm ${
-                    msg.from_me
-                      ? 'bg-[#005c4b] text-white rounded-br-none'
-                      : 'bg-[#202c33] text-[#e9edef] rounded-bl-none'
-                  }`}>
+                  <div
+                    className={`max-w-[65%] px-3 py-2 rounded-lg shadow-sm relative ${
+                      isIntMsg
+                        ? 'border border-yellow-600 rounded-br-none'
+                        : msg.from_me
+                          ? 'bg-[#005c4b] text-white rounded-br-none'
+                          : 'bg-[#202c33] text-[#e9edef] rounded-bl-none'
+                    }`}
+                    style={isIntMsg ? { backgroundColor: '#2d3748', color: '#e9edef' } : undefined}
+                  >
+                    {/* Badge nota interna */}
+                    {isIntMsg && (
+                      <span className="inline-block text-yellow-400 text-[10px] font-semibold uppercase tracking-wide mb-1 border border-yellow-700 rounded px-1">
+                        Interno
+                      </span>
+                    )}
                     {showSender && (
                       <p className="text-xs font-semibold mb-1" style={{ color }}>
                         {senderName}
                       </p>
                     )}
                     <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                      {msg.body || <span className="italic text-[#8696a0] text-xs">[mídia]</span>}
+                      {msg.body
+                        ? (searchQuery ? highlightText(msg.body, searchQuery) : msg.body)
+                        : <span className="italic text-[#8696a0] text-xs">[mídia]</span>}
                     </p>
                     <p className={`text-[10px] mt-1 text-right ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>
                       {formatTime(msg.timestamp)}
-                      {msg.from_me && <span className="ml-1">✓✓</span>}
+                      {msg.from_me && !isIntMsg && <span className="ml-1">✓✓</span>}
                     </p>
                   </div>
                 </div>
@@ -243,38 +517,163 @@ export function ChatPanel({
       {/* Error */}
       {error && (
         <div className="px-4 py-2 bg-red-900/30 border-t border-red-800">
-          <p className="text-red-400 text-xs">Erro ao enviar: {error}</p>
+          <p className="text-red-400 text-xs">Erro: {error}</p>
         </div>
       )}
 
-      {/* Input */}
-      <div className="flex items-end gap-3 px-4 py-3 bg-[#202c33] flex-shrink-0">
-        <div className="flex-1 bg-[#2a3942] rounded-lg px-4 py-2">
-          <textarea
-            ref={inputRef}
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Digite uma mensagem"
-            rows={1}
-            className="w-full bg-transparent text-[#e9edef] text-sm outline-none placeholder-[#8696a0] resize-none max-h-32 leading-relaxed"
-            style={{ height: 'auto' }}
-            onInput={e => {
-              const t = e.currentTarget
-              t.style.height = 'auto'
-              t.style.height = Math.min(t.scrollHeight, 128) + 'px'
-            }}
-          />
+      {/* Painel de agendamento */}
+      {showSchedule && (
+        <div className="bg-[#202c33] border-t border-[#2a3942] px-4 pt-3 pb-2 flex-shrink-0">
+          <p className="text-[#8696a0] text-xs font-semibold uppercase tracking-wide mb-2">Agendar mensagem</p>
+          <div className="flex gap-2 mb-3">
+            <input
+              type="datetime-local"
+              value={scheduleAt}
+              onChange={e => setScheduleAt(e.target.value)}
+              className="flex-1 bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none border border-[#3b4a54] focus:border-[#00a884] transition"
+            />
+            <button
+              onClick={scheduleMessage}
+              disabled={!text.trim() || !scheduleAt || scheduling}
+              className="bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#2a3942] disabled:text-[#8696a0] text-white text-xs px-3 py-2 rounded-lg transition font-medium"
+            >
+              {scheduling ? 'Agendando...' : 'Agendar'}
+            </button>
+          </div>
+
+          {/* Lista de agendadas */}
+          {loadingScheduled ? (
+            <p className="text-[#8696a0] text-xs mb-2">Carregando agendamentos...</p>
+          ) : scheduledMessages.length > 0 ? (
+            <div className="space-y-1 max-h-28 overflow-y-auto">
+              <p className="text-[#8696a0] text-xs font-medium mb-1">Pendentes:</p>
+              {scheduledMessages.map(s => (
+                <div key={s.id} className="flex items-center gap-2 bg-[#2a3942] rounded px-2 py-1.5">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[#e9edef] text-xs truncate">{s.body}</p>
+                    <p className="text-[#8696a0] text-[10px]">
+                      {new Date(s.send_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => cancelScheduled(s.id)}
+                    className="text-red-400 hover:text-red-300 text-[10px] px-1.5 py-0.5 border border-red-900 rounded transition flex-shrink-0"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[#8696a0] text-xs">Nenhum agendamento pendente.</p>
+          )}
         </div>
-        <button
-          onClick={send}
-          disabled={!text.trim() || sending}
-          className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#2a3942] disabled:text-[#8696a0] text-white flex items-center justify-center transition flex-shrink-0"
-        >
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-          </svg>
-        </button>
+      )}
+
+      {/* Input area */}
+      <div className="flex-shrink-0 relative">
+        {/* Dropdown quick replies */}
+        {showQuickReplies && (
+          <div
+            ref={quickRepliesRef}
+            className="absolute bottom-full left-4 right-4 mb-1 bg-[#202c33] border border-[#2a3942] rounded-xl shadow-2xl z-50 overflow-hidden"
+          >
+            <div className="px-3 py-2 border-b border-[#2a3942] flex items-center justify-between">
+              <p className="text-[#8696a0] text-xs font-semibold uppercase tracking-wide">Respostas rápidas</p>
+              <button
+                onClick={() => setShowQuickReplies(false)}
+                className="text-[#8696a0] hover:text-white transition"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="max-h-48 overflow-y-auto">
+              {qrLoading ? (
+                <p className="text-[#8696a0] text-xs text-center py-3">Carregando...</p>
+              ) : filteredQR.length === 0 ? (
+                <p className="text-[#8696a0] text-xs text-center py-3">Nenhuma resposta encontrada</p>
+              ) : (
+                filteredQR.map((qr, i) => (
+                  <button
+                    key={qr.id}
+                    onClick={() => selectQuickReply(qr)}
+                    className={`w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-[#2a3942] transition ${i === qrSelected ? 'bg-[#2a3942]' : ''}`}
+                  >
+                    <span className="text-[#00a884] font-mono text-xs bg-[#0b141a] px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">
+                      /{qr.shortcut}
+                    </span>
+                    <span className="text-[#e9edef] text-sm truncate leading-relaxed">
+                      {qr.content.length > 80 ? qr.content.slice(0, 80) + '…' : qr.content}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className={`flex items-end gap-2 px-4 py-3 bg-[#202c33] ${isInternal ? 'border-t-2 border-yellow-600' : ''}`}>
+          {/* Botão nota interna */}
+          <button
+            onClick={() => setIsInternal(v => !v)}
+            title={isInternal ? 'Modo nota interna (clique para desativar)' : 'Escrever nota interna'}
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition flex-shrink-0 ${
+              isInternal ? 'bg-yellow-600 text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+
+          {/* Botão agendar */}
+          <button
+            onClick={() => setShowSchedule(v => !v)}
+            title="Agendar mensagem"
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition flex-shrink-0 ${
+              showSchedule ? 'bg-[#00a884] text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+
+          {/* Textarea */}
+          <div className={`flex-1 rounded-lg px-4 py-2 ${isInternal ? 'bg-[#2d3748] border border-yellow-700' : 'bg-[#2a3942]'}`}>
+            {isInternal && (
+              <p className="text-yellow-400 text-[10px] font-semibold uppercase tracking-wide mb-1">Nota interna</p>
+            )}
+            <textarea
+              ref={inputRef}
+              value={text}
+              onChange={handleTextChange}
+              onKeyDown={handleKeyDown}
+              placeholder={isInternal ? 'Escrever nota interna...' : 'Digite uma mensagem ou / para respostas rápidas'}
+              rows={1}
+              className="w-full bg-transparent text-[#e9edef] text-sm outline-none placeholder-[#8696a0] resize-none max-h-32 leading-relaxed"
+              style={{ height: 'auto' }}
+              onInput={e => {
+                const t = e.currentTarget
+                t.style.height = 'auto'
+                t.style.height = Math.min(t.scrollHeight, 128) + 'px'
+              }}
+            />
+          </div>
+
+          {/* Botão enviar */}
+          <button
+            onClick={send}
+            disabled={!text.trim() || sending}
+            className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#2a3942] disabled:text-[#8696a0] text-white flex items-center justify-center transition flex-shrink-0"
+          >
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   )

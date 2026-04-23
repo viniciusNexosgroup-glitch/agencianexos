@@ -3,7 +3,19 @@
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Notification = {
+  id: string
+  title: string
+  body: string
+  read: boolean
+  created_at: string
+}
+
+// ─── Nav ──────────────────────────────────────────────────────────────────────
 
 const NAV = [
   {
@@ -62,9 +74,150 @@ const NAV = [
   },
 ]
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'agora'
+  if (mins < 60) return `${mins}min atrás`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h atrás`
+  const days = Math.floor(hours / 24)
+  return `${days}d atrás`
+}
+
+// ─── NotificationDropdown ─────────────────────────────────────────────────────
+
+function NotificationDropdown({
+  notifications,
+  onMarkOne,
+  onMarkAll,
+  onClose,
+}: {
+  notifications: Notification[]
+  onMarkOne: (id: string) => void
+  onMarkAll: () => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [onClose])
+
+  const unread = notifications.filter(n => !n.read)
+
+  return (
+    <div
+      ref={ref}
+      className="absolute left-full ml-2 bottom-0 w-72 bg-[#1e2c35] border border-[#2a3942] rounded-2xl shadow-2xl z-50 overflow-hidden"
+      style={{ maxHeight: '420px' }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a3942]">
+        <span className="text-white text-sm font-semibold">Notificações</span>
+        {unread.length > 0 && (
+          <button
+            onClick={onMarkAll}
+            className="text-[10px] text-[#00a884] hover:text-[#06cf9c] transition font-medium"
+          >
+            Marcar todas como lidas
+          </button>
+        )}
+      </div>
+
+      {/* Lista */}
+      <div className="overflow-y-auto" style={{ maxHeight: '360px' }}>
+        {notifications.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+            <svg className="w-8 h-8 text-[#3d4f5a] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            <p className="text-[#8696a0] text-xs">Nenhuma notificação</p>
+          </div>
+        )}
+        {notifications.map(n => (
+          <button
+            key={n.id}
+            onClick={() => !n.read && onMarkOne(n.id)}
+            className={`w-full text-left px-4 py-3 border-b border-[#2a3942] last:border-0 transition hover:bg-[#2a3942] ${
+              n.read ? 'opacity-60' : ''
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              {!n.read && (
+                <span className="w-2 h-2 rounded-full bg-[#00a884] flex-shrink-0 mt-1.5" />
+              )}
+              {n.read && <span className="w-2 h-2 flex-shrink-0 mt-1.5" />}
+              <div className="flex-1 min-w-0">
+                <p className="text-[#e9edef] text-xs font-medium truncate">{n.title}</p>
+                <p className="text-[#8696a0] text-[11px] mt-0.5 leading-relaxed line-clamp-2">{n.body}</p>
+                <p className="text-[#4a5878] text-[10px] mt-1">{timeAgo(n.created_at)}</p>
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+
 export function Sidebar({ userName, isAdmin }: { userName: string; isAdmin: boolean }) {
   const pathname = usePathname()
   const router = useRouter()
+
+  // Notificações
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notifOpen, setNotifOpen] = useState(false)
+  const unreadCount = notifications.filter(n => !n.read).length
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications?unread_only=true')
+      if (!res.ok) return
+      const data = await res.json()
+      setNotifications(data.notifications ?? data ?? [])
+    } catch {
+      // silencia erros de rede
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => clearInterval(interval)
+  }, [fetchNotifications])
+
+  async function markOne(id: string) {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] }),
+      })
+    } catch { /* silencia */ }
+  }
+
+  async function markAll() {
+    const unreadIds = notifications.filter(n => !n.read).map(n => n.id)
+    if (unreadIds.length === 0) return
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: unreadIds }),
+      })
+    } catch { /* silencia */ }
+  }
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -117,11 +270,42 @@ export function Sidebar({ userName, isAdmin }: { userName: string; isAdmin: bool
         })}
       </nav>
 
-      {/* User + Logout */}
+      {/* User + Notificações + Logout */}
       <div className="flex flex-col items-center py-3 gap-2 border-t border-[#1e2a40]">
+
+        {/* Sininho de notificações */}
+        <div className="relative">
+          <button
+            onClick={() => setNotifOpen(p => !p)}
+            title="Notificações"
+            className="relative text-[#4a5878] hover:text-[#8899bb] transition p-1"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {notifOpen && (
+            <NotificationDropdown
+              notifications={notifications}
+              onMarkOne={markOne}
+              onMarkAll={markAll}
+              onClose={() => setNotifOpen(false)}
+            />
+          )}
+        </div>
+
+        {/* Avatar do usuário */}
         <div className="w-8 h-8 rounded-full bg-indigo-700 flex items-center justify-center text-white text-xs font-bold">
           {userName.slice(0, 2).toUpperCase()}
         </div>
+
+        {/* Logout */}
         <button
           onClick={logout}
           title="Sair"

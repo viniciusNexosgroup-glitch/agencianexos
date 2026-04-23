@@ -101,7 +101,18 @@ export async function processWebhookEvent(body: any) {
         contactName = msg.pushName || phone
       }
 
-      // Processa contato + mensagem de forma atômica via função PostgreSQL (BD-3)
+      const referral = msg.referral || msg.message?.referral || null
+      const utm = {
+        utm_source: referral?.source_url ? 'facebook' : null,
+        utm_medium: referral?.source_type === 'AD' ? 'cpc' : null,
+        utm_campaign: referral?.headline || null,
+        ad_id: referral?.ad_id || null,
+        ad_name: referral?.ad_name || null,
+        adset_id: referral?.adset_id || null,
+        campaign_id_meta: referral?.campaign_id || null,
+        source_url: referral?.source_url || null,
+      }
+
       const { error } = await db.rpc('process_whatsapp_message', {
         p_instance_name:    instance,
         p_phone:            phone,
@@ -118,6 +129,14 @@ export async function processWebhookEvent(body: any) {
 
       if (error) {
         console.error('Erro ao processar mensagem via RPC:', error.message)
+      }
+
+      if (!error && referral && Object.values(utm).some(v => v !== null)) {
+        await db.from('whatsapp_contacts')
+          .update(utm)
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+          .is('utm_source', null)
       }
     }
   }

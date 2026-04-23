@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { ChatPanel } from './ChatPanel'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Contact = {
   id: string
@@ -12,14 +14,38 @@ type Contact = {
   remote_jid: string | null
 }
 
-function getInitials(name: string) {
-  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+type Tag = {
+  id: string
+  name: string
+  color: string
 }
+
+type Instance = {
+  instance_name: string
+  [key: string]: unknown
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const AVATAR_COLORS = [
   'bg-teal-600', 'bg-indigo-600', 'bg-purple-600', 'bg-pink-600',
   'bg-orange-600', 'bg-cyan-600', 'bg-emerald-600', 'bg-rose-600',
 ]
+
+const TAG_PRESET_COLORS = [
+  '#ef4444', // red
+  '#f97316', // orange
+  '#eab308', // yellow
+  '#22c55e', // green
+  '#3b82f6', // blue
+  '#a855f7', // purple
+]
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getInitials(name: string) {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
 
 function avatarColor(name: string) {
   let hash = 0
@@ -41,122 +67,647 @@ function formatTime(ts: string | null) {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
+// ─── TagBadge ─────────────────────────────────────────────────────────────────
+
+function TagBadge({ tag, onRemove }: { tag: Tag; onRemove?: () => void }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium leading-none"
+      style={{ backgroundColor: tag.color + '33', color: tag.color, border: `1px solid ${tag.color}55` }}
+    >
+      {tag.name}
+      {onRemove && (
+        <button
+          onClick={e => { e.stopPropagation(); onRemove() }}
+          className="hover:opacity-70 transition leading-none"
+          title="Remover tag"
+        >
+          ×
+        </button>
+      )}
+    </span>
+  )
+}
+
+// ─── TagDropdown (para o header do chat) ──────────────────────────────────────
+
+function TagDropdown({ contactId, onClose }: { contactId: string; onClose: () => void }) {
+  const [allTags, setAllTags] = useState<Tag[]>([])
+  const [contactTags, setContactTags] = useState<Tag[]>([])
+  const [loading, setLoading] = useState(true)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    async function fetchData() {
+      const [tagsRes, contactTagsRes] = await Promise.all([
+        fetch('/api/whatsapp/tags'),
+        fetch(`/api/whatsapp/contacts/${contactId}/tags`),
+      ])
+      const tagsData = await tagsRes.json()
+      const contactTagsData = await contactTagsRes.json()
+      setAllTags(tagsData.tags ?? tagsData ?? [])
+      setContactTags(contactTagsData.tags ?? contactTagsData ?? [])
+      setLoading(false)
+    }
+    fetchData()
+  }, [contactId])
+
+  // Fecha ao clicar fora
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [onClose])
+
+  async function toggleTag(tag: Tag) {
+    const has = contactTags.some(t => t.id === tag.id)
+    if (has) {
+      await fetch(`/api/whatsapp/contacts/${contactId}/tags`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag_id: tag.id }),
+      })
+      setContactTags(prev => prev.filter(t => t.id !== tag.id))
+    } else {
+      await fetch(`/api/whatsapp/contacts/${contactId}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag_id: tag.id }),
+      })
+      setContactTags(prev => [...prev, tag])
+    }
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute right-0 top-full mt-1 w-52 bg-[#2a3942] border border-[#3d4f5a] rounded-xl shadow-2xl z-50 py-2"
+    >
+      <p className="text-[#8696a0] text-xs px-3 pb-2 font-medium uppercase tracking-wider">Tags</p>
+      {loading && <p className="text-[#8696a0] text-xs text-center py-2">Carregando...</p>}
+      {!loading && allTags.length === 0 && (
+        <p className="text-[#8696a0] text-xs text-center py-2">Nenhuma tag criada</p>
+      )}
+      {allTags.map(tag => {
+        const active = contactTags.some(t => t.id === tag.id)
+        return (
+          <button
+            key={tag.id}
+            onClick={() => toggleTag(tag)}
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-[#3d4f5a] transition text-left"
+          >
+            <span
+              className="w-3 h-3 rounded-full flex-shrink-0"
+              style={{ backgroundColor: tag.color }}
+            />
+            <span className="text-sm text-[#e9edef] flex-1 truncate">{tag.name}</span>
+            {active && (
+              <svg className="w-4 h-4 text-[#00a884] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── ImportCSVModal ────────────────────────────────────────────────────────────
+
+function ImportCSVModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [instances, setInstances] = useState<Instance[]>([])
+  const [instanceName, setInstanceName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<{ imported: number; ignored: number } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/whatsapp/instance')
+      .then(r => r.json())
+      .then(d => {
+        const list: Instance[] = d.instances ?? d ?? []
+        setInstances(list)
+        if (list.length > 0) setInstanceName(list[0].instance_name)
+      })
+      .catch(() => {})
+  }, [])
+
+  async function handleImport() {
+    if (!file || !instanceName) return
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    const form = new FormData()
+    form.append('file', file)
+    form.append('instance_name', instanceName)
+    try {
+      const res = await fetch('/api/whatsapp/contacts/import', { method: 'POST', body: form })
+      const data = await res.json()
+      if (data.error) { setError(data.error); setLoading(false); return }
+      setResult({ imported: data.imported ?? 0, ignored: data.ignored ?? 0 })
+      onSuccess()
+    } catch {
+      setError('Erro ao importar. Tente novamente.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-[#1e2c35] border border-[#2a3942] rounded-2xl w-full max-w-md mx-4 p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-white font-semibold text-base">Importar Contatos via CSV</h2>
+          <button onClick={onClose} className="text-[#8696a0] hover:text-white transition">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {result ? (
+          <div className="text-center py-4">
+            <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-white font-medium">Importação concluída</p>
+            <p className="text-[#8696a0] text-sm mt-1">
+              <span className="text-green-400 font-semibold">{result.imported}</span> contatos importados,{' '}
+              <span className="text-yellow-400 font-semibold">{result.ignored}</span> ignorados
+            </p>
+            <button
+              onClick={onClose}
+              className="mt-4 px-4 py-2 bg-[#00a884] hover:bg-[#06cf9c] text-white rounded-lg text-sm transition"
+            >
+              Fechar
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="text-[#8696a0] text-xs font-medium block mb-1.5">Arquivo CSV</label>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={e => setFile(e.target.files?.[0] ?? null)}
+                className="w-full text-sm text-[#e9edef] file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-[#2a3942] file:text-[#e9edef] hover:file:bg-[#3d4f5a] file:transition file:cursor-pointer bg-[#2a3942] rounded-lg px-3 py-2 cursor-pointer"
+              />
+            </div>
+            <div>
+              <label className="text-[#8696a0] text-xs font-medium block mb-1.5">Instância WhatsApp</label>
+              <select
+                value={instanceName}
+                onChange={e => setInstanceName(e.target.value)}
+                className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none border border-[#3d4f5a] focus:border-[#00a884] transition"
+              >
+                {instances.map(i => (
+                  <option key={i.instance_name} value={i.instance_name}>{i.instance_name}</option>
+                ))}
+                {instances.length === 0 && <option value="">Nenhuma instância</option>}
+              </select>
+            </div>
+            {error && <p className="text-red-400 text-xs">{error}</p>}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={onClose}
+                className="flex-1 py-2 text-sm text-[#8696a0] hover:text-white border border-[#3d4f5a] rounded-lg transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleImport}
+                disabled={!file || !instanceName || loading}
+                className="flex-1 py-2 text-sm bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#2a3942] disabled:text-[#8696a0] text-white rounded-lg transition font-medium"
+              >
+                {loading ? 'Importando...' : 'Importar'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── TagManagerModal ───────────────────────────────────────────────────────────
+
+function TagManagerModal({ onClose, onTagsChanged }: { onClose: () => void; onTagsChanged: () => void }) {
+  const [tags, setTags] = useState<Tag[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newName, setNewName] = useState('')
+  const [newColor, setNewColor] = useState(TAG_PRESET_COLORS[0])
+  const [creating, setCreating] = useState(false)
+
+  const fetchTags = useCallback(async () => {
+    const res = await fetch('/api/whatsapp/tags')
+    const data = await res.json()
+    setTags(data.tags ?? data ?? [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { fetchTags() }, [fetchTags])
+
+  async function createTag() {
+    if (!newName.trim() || creating) return
+    setCreating(true)
+    await fetch('/api/whatsapp/tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName.trim(), color: newColor }),
+    })
+    setNewName('')
+    setCreating(false)
+    await fetchTags()
+    onTagsChanged()
+  }
+
+  async function deleteTag(id: string) {
+    await fetch(`/api/whatsapp/tags?id=${id}`, { method: 'DELETE' })
+    setTags(prev => prev.filter(t => t.id !== id))
+    onTagsChanged()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-[#1e2c35] border border-[#2a3942] rounded-2xl w-full max-w-md mx-4 p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-white font-semibold text-base">Gerenciar Tags</h2>
+          <button onClick={onClose} className="text-[#8696a0] hover:text-white transition">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Criar nova tag */}
+        <div className="bg-[#2a3942] rounded-xl p-3 mb-4">
+          <p className="text-[#8696a0] text-xs font-medium mb-2">Nova tag</p>
+          <div className="flex gap-2">
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && createTag()}
+              placeholder="Nome da tag"
+              className="flex-1 bg-[#1e2c35] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none border border-[#3d4f5a] focus:border-[#00a884] placeholder-[#8696a0] transition"
+            />
+            <button
+              onClick={createTag}
+              disabled={!newName.trim() || creating}
+              className="px-3 py-2 bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#3d4f5a] disabled:text-[#8696a0] text-white rounded-lg text-sm transition font-medium"
+            >
+              {creating ? '...' : 'Criar'}
+            </button>
+          </div>
+          {/* Seletor de cor */}
+          <div className="flex gap-2 mt-2.5">
+            {TAG_PRESET_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setNewColor(c)}
+                className="w-6 h-6 rounded-full transition ring-offset-[#2a3942] ring-offset-2"
+                style={{
+                  backgroundColor: c,
+                  outline: newColor === c ? `2px solid ${c}` : '2px solid transparent',
+                  outlineOffset: '2px',
+                }}
+                title={c}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Lista de tags */}
+        <div className="space-y-1 max-h-64 overflow-y-auto">
+          {loading && <p className="text-[#8696a0] text-xs text-center py-4">Carregando...</p>}
+          {!loading && tags.length === 0 && (
+            <p className="text-[#8696a0] text-xs text-center py-4">Nenhuma tag criada ainda</p>
+          )}
+          {tags.map(tag => (
+            <div
+              key={tag.id}
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-[#2a3942] group"
+            >
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+              <span className="text-sm text-[#e9edef] flex-1">{tag.name}</span>
+              <button
+                onClick={() => deleteTag(tag.id)}
+                className="text-[#8696a0] hover:text-red-400 transition opacity-0 group-hover:opacity-100"
+                title="Deletar tag"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── ChatPanelWithTags (wrapper que adiciona botão de tags no header) ──────────
+
+function ChatPanelWithTags({
+  contact,
+  onClose,
+  funnels,
+}: {
+  contact: Contact
+  onClose: () => void
+  funnels: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
+}) {
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
+
+  // Injeta o botão de tag no header via um portal-like approach:
+  // Renderizamos o ChatPanel normalmente e adicionamos o dropdown de tag
+  // sobreposto ao header com posição absoluta.
+  return (
+    <div className="flex flex-col h-full relative">
+      {/* Botão de tag flutuante sobre o header */}
+      <div className="absolute right-4 top-2 z-20 flex items-center">
+        <div className="relative">
+          <button
+            onClick={() => setTagDropdownOpen(p => !p)}
+            title="Gerenciar tags do contato"
+            className="flex items-center justify-center w-8 h-8 rounded-full text-[#8696a0] hover:text-white hover:bg-[#3d4f5a] transition"
+          >
+            {/* Ícone de etiqueta */}
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"
+              />
+            </svg>
+          </button>
+          {tagDropdownOpen && (
+            <TagDropdown
+              contactId={contact.id}
+              onClose={() => setTagDropdownOpen(false)}
+            />
+          )}
+        </div>
+      </div>
+      <ChatPanel contact={contact} onClose={onClose} funnels={funnels} />
+    </div>
+  )
+}
+
+// ─── ContactsList (componente principal) ──────────────────────────────────────
+
 export function ContactsList({ funnels }: { funnels: { id: string; name: string; crm_stages: { id: string; name: string }[] }[] }) {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [chatContact, setChatContact] = useState<Contact | null>(null)
   const [search, setSearch] = useState('')
 
+  // Tags
+  const [allTags, setAllTags] = useState<Tag[]>([])
+  const [contactTagsMap, setContactTagsMap] = useState<Record<string, Tag[]>>({})
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
+
+  // Modais
+  const [showImport, setShowImport] = useState(false)
+  const [showTagManager, setShowTagManager] = useState(false)
+
+  const fetchTags = useCallback(async () => {
+    const res = await fetch('/api/whatsapp/tags')
+    const data = await res.json()
+    setAllTags(data.tags ?? data ?? [])
+  }, [])
+
   async function load() {
     const res = await fetch('/api/whatsapp/contacts')
     const data = await res.json()
-    setContacts(data.contacts ?? [])
+    const list: Contact[] = data.contacts ?? []
+    setContacts(list)
     setLoading(false)
+    // Carrega tags de cada contato em batch (opcional: endpoint /api/whatsapp/contacts/tags se existir)
+    // Por ora, carregamos individualmente só os contatos visíveis conforme necessário
   }
 
-  useEffect(() => { load() }, [])
+  async function fetchContactTags(contactId: string) {
+    if (contactTagsMap[contactId]) return
+    try {
+      const res = await fetch(`/api/whatsapp/contacts/${contactId}/tags`)
+      const data = await res.json()
+      const tags: Tag[] = data.tags ?? data ?? []
+      setContactTagsMap(prev => ({ ...prev, [contactId]: tags }))
+    } catch {
+      setContactTagsMap(prev => ({ ...prev, [contactId]: [] }))
+    }
+  }
 
-  const filtered = contacts.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone.includes(search)
-  )
+  useEffect(() => {
+    load()
+    fetchTags()
+  }, [])
+
+  // Carrega tags dos contatos visíveis quando lista muda
+  useEffect(() => {
+    contacts.forEach(c => fetchContactTags(c.id))
+  }, [contacts])
+
+  const filtered = contacts.filter(c => {
+    const matchSearch =
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.phone.includes(search)
+    if (!matchSearch) return false
+    if (activeTagFilter) {
+      const tags = contactTagsMap[c.id] ?? []
+      return tags.some(t => t.id === activeTagFilter)
+    }
+    return true
+  })
+
+  function handleSelectContact(contact: Contact) {
+    setChatContact(contact)
+    fetchContactTags(contact.id)
+  }
 
   return (
-    <div className="flex h-[calc(100vh-160px)] rounded-xl overflow-hidden border border-[#222e35]">
-      {/* Sidebar */}
-      <div className={`flex flex-col bg-[#111b21] ${chatContact ? 'hidden md:flex w-[360px] flex-shrink-0' : 'flex-1 md:w-[360px] md:flex-shrink-0'}`}>
-        {/* Sidebar header */}
-        <div className="px-4 py-3 bg-[#202c33] flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-white text-sm font-bold">
-            WA
-          </div>
-          <span className="text-white font-semibold flex-1">Conversas</span>
-        </div>
+    <>
+      <div className="flex h-[calc(100vh-160px)] rounded-xl overflow-hidden border border-[#222e35]">
+        {/* Sidebar */}
+        <div className={`flex flex-col bg-[#111b21] ${chatContact ? 'hidden md:flex w-[360px] flex-shrink-0' : 'flex-1 md:w-[360px] md:flex-shrink-0'}`}>
 
-        {/* Search */}
-        <div className="px-3 py-2 bg-[#111b21]">
-          <div className="flex items-center bg-[#202c33] rounded-lg px-3 gap-2">
-            <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Pesquisar ou começar uma conversa"
-              className="flex-1 bg-transparent text-white text-sm py-2 outline-none placeholder-[#8696a0]"
-            />
-          </div>
-        </div>
-
-        {/* Contact list */}
-        <div className="flex-1 overflow-y-auto">
-          {loading && (
-            <p className="text-[#8696a0] text-sm text-center py-8">Carregando...</p>
-          )}
-          {!loading && filtered.length === 0 && (
-            <p className="text-[#8696a0] text-sm text-center py-8 px-4">
-              {contacts.length === 0
-                ? 'Nenhuma conversa ainda. Aguarde mensagens chegarem.'
-                : 'Nenhum resultado.'}
-            </p>
-          )}
-          {filtered.map(contact => (
-            <button
-              key={contact.id}
-              onClick={() => setChatContact(contact)}
-              className={`w-full flex items-center gap-3 px-3 py-3 hover:bg-[#202c33] transition border-b border-[#222e35] ${
-                chatContact?.id === contact.id ? 'bg-[#2a3942]' : ''
-              }`}
-            >
-              {/* Avatar */}
-              <div className={`w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center text-white font-semibold text-sm ${avatarColor(contact.name)}`}>
-                {isGroup(contact)
-                  ? <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
-                  : getInitials(contact.name)
-                }
-              </div>
-              {/* Info */}
-              <div className="flex-1 min-w-0 text-left">
-                <div className="flex items-center justify-between">
-                  <span className="text-white text-sm font-medium truncate">{contact.name}</span>
-                  {contact.last_message_at && (
-                    <span className="text-[#8696a0] text-xs flex-shrink-0 ml-2">
-                      {formatTime(contact.last_message_at)}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  {isGroup(contact)
-                    ? <span className="text-[#8696a0] text-xs truncate">Grupo</span>
-                    : <span className="text-[#8696a0] text-xs truncate">{contact.phone}</span>
-                  }
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Chat area */}
-      <div className={`flex-1 flex flex-col bg-[#0b141a] ${!chatContact ? 'hidden md:flex' : 'flex'}`}>
-        {chatContact ? (
-          <ChatPanel
-            contact={chatContact}
-            onClose={() => setChatContact(null)}
-            funnels={funnels}
-          />
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
-            <div className="w-20 h-20 rounded-full bg-[#202c33] flex items-center justify-center mb-6">
-              <svg className="w-10 h-10 text-[#8696a0]" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-              </svg>
+          {/* Header */}
+          <div className="px-4 py-3 bg-[#202c33] flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+              WA
             </div>
-            <h3 className="text-[#e9edef] text-xl font-light mb-2">WhatsApp CRM</h3>
-            <p className="text-[#8696a0] text-sm">Selecione uma conversa para abrir</p>
+            <span className="text-white font-semibold flex-1">Conversas</span>
+            {/* Botão importar CSV */}
+            <button
+              onClick={() => setShowImport(true)}
+              title="Importar CSV"
+              className="text-[#8696a0] hover:text-white transition p-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </button>
+            {/* Botão gerenciar tags */}
+            <button
+              onClick={() => setShowTagManager(true)}
+              title="Gerenciar Tags"
+              className="text-[#8696a0] hover:text-white transition p-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
           </div>
-        )}
+
+          {/* Filtro por tags */}
+          {allTags.length > 0 && (
+            <div className="px-3 py-2 bg-[#111b21] flex gap-1.5 flex-wrap border-b border-[#222e35]">
+              <button
+                onClick={() => setActiveTagFilter(null)}
+                className={`px-2 py-1 rounded-full text-[10px] font-medium transition ${
+                  activeTagFilter === null
+                    ? 'bg-[#00a884] text-white'
+                    : 'bg-[#202c33] text-[#8696a0] hover:text-white'
+                }`}
+              >
+                Todos
+              </button>
+              {allTags.map(tag => (
+                <button
+                  key={tag.id}
+                  onClick={() => setActiveTagFilter(activeTagFilter === tag.id ? null : tag.id)}
+                  className="px-2 py-1 rounded-full text-[10px] font-medium transition"
+                  style={
+                    activeTagFilter === tag.id
+                      ? { backgroundColor: tag.color, color: '#fff' }
+                      : { backgroundColor: tag.color + '22', color: tag.color, border: `1px solid ${tag.color}44` }
+                  }
+                >
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Search */}
+          <div className="px-3 py-2 bg-[#111b21]">
+            <div className="flex items-center bg-[#202c33] rounded-lg px-3 gap-2">
+              <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Pesquisar ou começar uma conversa"
+                className="flex-1 bg-transparent text-white text-sm py-2 outline-none placeholder-[#8696a0]"
+              />
+            </div>
+          </div>
+
+          {/* Contact list */}
+          <div className="flex-1 overflow-y-auto">
+            {loading && (
+              <p className="text-[#8696a0] text-sm text-center py-8">Carregando...</p>
+            )}
+            {!loading && filtered.length === 0 && (
+              <p className="text-[#8696a0] text-sm text-center py-8 px-4">
+                {contacts.length === 0
+                  ? 'Nenhuma conversa ainda. Aguarde mensagens chegarem.'
+                  : 'Nenhum resultado.'}
+              </p>
+            )}
+            {filtered.map(contact => {
+              const tags = contactTagsMap[contact.id] ?? []
+              return (
+                <button
+                  key={contact.id}
+                  onClick={() => handleSelectContact(contact)}
+                  className={`w-full flex items-center gap-3 px-3 py-3 hover:bg-[#202c33] transition border-b border-[#222e35] ${
+                    chatContact?.id === contact.id ? 'bg-[#2a3942]' : ''
+                  }`}
+                >
+                  {/* Avatar */}
+                  <div className={`w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center text-white font-semibold text-sm ${avatarColor(contact.name)}`}>
+                    {isGroup(contact)
+                      ? <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                      : getInitials(contact.name)
+                    }
+                  </div>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white text-sm font-medium truncate">{contact.name}</span>
+                      {contact.last_message_at && (
+                        <span className="text-[#8696a0] text-xs flex-shrink-0 ml-2">
+                          {formatTime(contact.last_message_at)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {isGroup(contact)
+                        ? <span className="text-[#8696a0] text-xs truncate">Grupo</span>
+                        : <span className="text-[#8696a0] text-xs truncate">{contact.phone}</span>
+                      }
+                    </div>
+                    {/* Tags do contato */}
+                    {tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {tags.map(tag => (
+                          <TagBadge key={tag.id} tag={tag} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Chat area */}
+        <div className={`flex-1 flex flex-col bg-[#0b141a] ${!chatContact ? 'hidden md:flex' : 'flex'}`}>
+          {chatContact ? (
+            <ChatPanelWithTags
+              contact={chatContact}
+              onClose={() => setChatContact(null)}
+              funnels={funnels}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+              <div className="w-20 h-20 rounded-full bg-[#202c33] flex items-center justify-center mb-6">
+                <svg className="w-10 h-10 text-[#8696a0]" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+                </svg>
+              </div>
+              <h3 className="text-[#e9edef] text-xl font-light mb-2">WhatsApp CRM</h3>
+              <p className="text-[#8696a0] text-sm">Selecione uma conversa para abrir</p>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Modais */}
+      {showImport && (
+        <ImportCSVModal
+          onClose={() => setShowImport(false)}
+          onSuccess={() => { load(); setShowImport(false) }}
+        />
+      )}
+      {showTagManager && (
+        <TagManagerModal
+          onClose={() => setShowTagManager(false)}
+          onTagsChanged={() => { fetchTags(); setContactTagsMap({}) }}
+        />
+      )}
+    </>
   )
 }

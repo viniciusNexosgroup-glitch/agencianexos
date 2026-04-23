@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { instanceName, contactId, phone, text } = await req.json()
+  const { instanceName, contactId, phone, text, is_internal } = await req.json()
 
   if (!instanceName || !phone || !text) {
     return NextResponse.json({ error: 'instanceName, phone e text são obrigatórios' }, { status: 400 })
@@ -29,6 +29,22 @@ export async function POST(req: NextRequest) {
 
   if (phone.includes('@lid')) {
     return NextResponse.json({ error: 'Contato inválido (dispositivo vinculado)' }, { status: 400 })
+  }
+
+  // Nota interna: salva só no banco, não envia pelo WhatsApp
+  if (is_internal) {
+    const { error: dbError } = await supabase().from('whatsapp_messages').insert({
+      contact_id: contactId,
+      instance_name: instanceName,
+      message_id: crypto.randomUUID(),
+      from_me: true,
+      body: text,
+      message_type: 'text',
+      timestamp: new Date().toISOString(),
+      is_internal: true,
+    })
+    if (dbError) console.error('DB insert error (internal note):', dbError.message)
+    return NextResponse.json({ success: true })
   }
 
   const isGroup = phone.includes('@g.us')
@@ -66,6 +82,7 @@ export async function POST(req: NextRequest) {
     body: text,
     message_type: 'text',
     timestamp: new Date().toISOString(),
+    is_internal: false,
   })
 
   if (dbError) console.error('DB insert error:', dbError.message)
