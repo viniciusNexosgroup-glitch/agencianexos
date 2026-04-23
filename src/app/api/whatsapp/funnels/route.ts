@@ -34,9 +34,10 @@ export async function POST(req: NextRequest) {
   if (!funnel) return NextResponse.json({ error: 'Erro ao criar funil' }, { status: 500 })
 
   if (stages?.length) {
-    await db.from('crm_stages').insert(
+    const { error: stagesError } = await db.from('crm_stages').insert(
       stages.map((s: string, i: number) => ({ funnel_id: funnel.id, name: s, position: i }))
     )
+    if (stagesError) console.error('Erro ao criar etapas do funil:', stagesError.message)
   }
 
   return NextResponse.json({ funnel })

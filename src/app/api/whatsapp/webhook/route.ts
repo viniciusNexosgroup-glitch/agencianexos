@@ -3,7 +3,10 @@ import { processWebhookEvent } from '@/lib/webhook-handler'
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.WEBHOOK_SECRET
-  if (!secret) return true
+  if (!secret) {
+    console.warn('[security] WEBHOOK_SECRET não definido — webhook aceita qualquer origem')
+    return true
+  }
   const token = req.nextUrl.searchParams.get('token') || req.headers.get('x-webhook-token')
   return token === secret
 }

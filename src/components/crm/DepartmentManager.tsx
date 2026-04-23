@@ -19,15 +19,20 @@ export function DepartmentManager() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   async function load() {
-    const [dRes, aRes] = await Promise.all([
-      fetch('/api/whatsapp/departments'),
-      fetch('/api/whatsapp/agents'),
-    ])
-    const dData = await dRes.json()
-    const aData = await aRes.json()
-    setDepartments(dData.departments ?? [])
-    setAgents(aData.agents ?? [])
-    setLoading(false)
+    try {
+      const [dRes, aRes] = await Promise.all([
+        fetch('/api/whatsapp/departments'),
+        fetch('/api/whatsapp/agents'),
+      ])
+      const dData = await dRes.json()
+      const aData = await aRes.json()
+      setDepartments(dData.departments ?? [])
+      setAgents(aData.agents ?? [])
+    } catch (err) {
+      console.error('Erro ao carregar departamentos:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])

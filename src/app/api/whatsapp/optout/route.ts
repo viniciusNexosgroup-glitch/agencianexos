@@ -11,6 +11,9 @@ function supabase() {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
   const { phone, instance_name, action } = await req.json()
 
   if (!phone || !instance_name || !action) {

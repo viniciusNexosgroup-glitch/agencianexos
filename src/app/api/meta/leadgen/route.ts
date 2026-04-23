@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createHmac } from 'crypto'
 
 function supabase() {
   return createClient(
@@ -7,6 +8,15 @@ function supabase() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
+}
+
+async function verifySignature(req: NextRequest, rawBody: string): Promise<boolean> {
+  const appSecret = process.env.META_APP_SECRET
+  if (!appSecret) return true // sem secret configurado, passa (desenvolvimento)
+  const signature = req.headers.get('x-hub-signature-256')
+  if (!signature) return false
+  const expected = 'sha256=' + createHmac('sha256', appSecret).update(rawBody).digest('hex')
+  return signature === expected
 }
 
 // Verificação de webhook Meta (GET)
@@ -24,7 +34,11 @@ export async function GET(req: NextRequest) {
 
 // Recebe evento de Lead Ads (POST)
 export async function POST(req: NextRequest) {
-  const body = await req.json()
+  const rawBody = await req.text()
+  if (!(await verifySignature(req, rawBody))) {
+    return NextResponse.json({ error: 'Assinatura inválida' }, { status: 401 })
+  }
+  const body = JSON.parse(rawBody)
   const db = supabase()
 
   const entries = body?.entry ?? []

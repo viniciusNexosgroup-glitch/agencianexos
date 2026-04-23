@@ -1,6 +1,10 @@
 import { cookies } from 'next/headers'
 import { jwtVerify } from 'jose'
 
+if (!process.env.JWT_SECRET) {
+  console.warn('[security] JWT_SECRET não definido — usando fallback derivado do SUPABASE_SERVICE_ROLE_KEY. Defina JWT_SECRET no ambiente de produção.')
+}
+
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET ||
   (process.env.SUPABASE_SERVICE_ROLE_KEY || '').slice(0, 32).padEnd(32, '0')
