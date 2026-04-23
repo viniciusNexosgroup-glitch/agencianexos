@@ -58,17 +58,23 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  if (!session.is_admin) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 })
-  await supabase().from('crm_leads').delete().eq('id', id)
+
+  const { error } = await supabase().from('crm_leads').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }
 
 export async function PATCH(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  if (!session.is_admin) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { id, stageId, position, notes, title, value } = await req.json()
+  if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 })
 
   const updates: Record<string, unknown> = {}
   if (stageId !== undefined) updates.stage_id = stageId
@@ -77,6 +83,7 @@ export async function PATCH(req: NextRequest) {
   if (title !== undefined) updates.title = title
   if (value !== undefined) updates.value = value
 
-  await supabase().from('crm_leads').update(updates).eq('id', id)
+  const { error } = await supabase().from('crm_leads').update(updates).eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }

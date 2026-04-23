@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { jwtVerify } from 'jose'
 
 const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET ||
   (process.env.SUPABASE_SERVICE_ROLE_KEY || '').slice(0, 32).padEnd(32, '0')
 )
 

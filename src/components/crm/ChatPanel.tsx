@@ -116,23 +116,31 @@ export function ChatPanel({
     }
     setMessages(prev => [...prev, optimistic])
 
-    const res = await fetch('/api/whatsapp/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        instanceName: contact.instance_name,
-        contactId: contact.id,
-        phone: contact.remote_jid || contact.phone,
-        text: body,
-      }),
-    })
-    const result = await res.json()
-    setSending(false)
-    if (result.error) {
-      setError(result.error)
+    try {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceName: contact.instance_name,
+          contactId: contact.id,
+          phone: contact.remote_jid || contact.phone,
+          text: body,
+        }),
+      })
+      const result = await res.json()
+      if (result.error) {
+        setError(result.error)
+        setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+        setText(body)
+      } else {
+        setTimeout(load, 1500)
+      }
+    } catch {
+      setError('Erro de conexão. Tente novamente.')
       setMessages(prev => prev.filter(m => m.id !== optimistic.id))
-    } else {
-      setTimeout(load, 1500)
+      setText(body)
+    } finally {
+      setSending(false)
     }
   }
 
