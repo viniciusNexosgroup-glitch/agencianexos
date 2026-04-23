@@ -212,13 +212,14 @@ export function ChatPanel({
     if (updatingStage) return
     setUpdatingStage(true)
     try {
+      const funnel = funnels?.find(f => f.crm_stages.some(s => s.id === stageId))
       const res = await fetch('/api/whatsapp/leads', {
         method: lead ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           lead
-            ? { id: lead.id, stageId }
-            : { contactId: contact.id, stageId, title: contact.name || 'Lead' }
+            ? { id: lead.id, stageId, funnelId: funnel?.id }
+            : { contactId: contact.id, stageId, funnelId: funnel?.id, title: contact.name || 'Lead' }
         ),
       })
       const data = await res.json()
