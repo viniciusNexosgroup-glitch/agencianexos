@@ -138,6 +138,52 @@ export async function processWebhookEvent(body: any) {
           .eq('phone', phone)
           .is('utm_source', null)
       }
+
+      // Auto-criar lead na etapa "Lead" quando for mensagem recebida de novo contato
+      if (!error && !fromMe && !isGroup) {
+        const { data: contact } = await db
+          .from('whatsapp_contacts')
+          .select('id')
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+          .single()
+
+        if (contact?.id) {
+          const { count } = await db
+            .from('crm_leads')
+            .select('id', { count: 'exact', head: true })
+            .eq('contact_id', contact.id)
+
+          if ((count ?? 0) === 0) {
+            // Busca a etapa "Lead" no primeiro funil disponível
+            const { data: leadStage } = await db
+              .from('crm_stages')
+              .select('id, funnel_id')
+              .eq('name', 'Lead')
+              .order('position', { ascending: true })
+              .limit(1)
+              .single()
+
+            if (leadStage) {
+              const { data: maxPos } = await db
+                .from('crm_leads')
+                .select('position')
+                .eq('stage_id', leadStage.id)
+                .order('position', { ascending: false })
+                .limit(1)
+                .single()
+
+              await db.from('crm_leads').insert({
+                contact_id: contact.id,
+                stage_id: leadStage.id,
+                funnel_id: leadStage.funnel_id,
+                title: contactName || phone,
+                position: (maxPos?.position ?? -1) + 1,
+              })
+            }
+          }
+        }
+      }
     }
   }
 }
