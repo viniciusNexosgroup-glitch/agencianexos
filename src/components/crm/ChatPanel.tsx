@@ -21,6 +21,12 @@ type Contact = {
   remote_jid?: string | null
 }
 
+type Lead = {
+  id: string
+  stage_id: string
+  contact_id: string
+}
+
 type QuickReply = {
   id: string
   shortcut: string
@@ -130,14 +136,31 @@ export function ChatPanel({
   const [searchQuery, setSearchQuery] = useState('')
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  // Etapa do funil
+  const [lead, setLead] = useState<Lead | null>(null)
+  const [showStageDropdown, setShowStageDropdown] = useState(false)
+  const [updatingStage, setUpdatingStage] = useState(false)
+  const stageDropdownRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     setMessages([])
     setLoading(true)
     setError(null)
     load()
+    loadLead()
     const interval = setInterval(load, 5000)
     return () => clearInterval(interval)
   }, [contact.id])
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (stageDropdownRef.current && !stageDropdownRef.current.contains(e.target as Node)) {
+        setShowStageDropdown(false)
+      }
+    }
+    if (showStageDropdown) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showStageDropdown])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -173,6 +196,37 @@ export function ChatPanel({
     const data = await res.json()
     setMessages(data.messages ?? [])
     setLoading(false)
+  }
+
+  async function loadLead() {
+    try {
+      const res = await fetch(`/api/whatsapp/leads?contact_id=${contact.id}`)
+      const data = await res.json()
+      setLead(data.lead ?? null)
+    } catch {
+      setLead(null)
+    }
+  }
+
+  async function updateStage(stageId: string) {
+    if (updatingStage) return
+    setUpdatingStage(true)
+    try {
+      const res = await fetch('/api/whatsapp/leads', {
+        method: lead ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          lead
+            ? { id: lead.id, stageId }
+            : { contactId: contact.id, stageId, title: contact.name || 'Lead' }
+        ),
+      })
+      const data = await res.json()
+      if (data.lead) setLead(data.lead)
+    } finally {
+      setUpdatingStage(false)
+      setShowStageDropdown(false)
+    }
   }
 
   async function loadQuickReplies() {
@@ -401,6 +455,66 @@ export function ChatPanel({
             </>
           )}
         </div>
+        {/* Seletor de etapa do funil */}
+        {funnels && funnels.length > 0 && (
+          <div className="relative" ref={stageDropdownRef}>
+            <button
+              onClick={() => setShowStageDropdown(v => !v)}
+              title="Mover para etapa do funil"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition max-w-[130px] ${
+                showStageDropdown
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-[#2a3942] text-[#8696a0] hover:text-white'
+              }`}
+            >
+              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              <span className="truncate">
+                {lead
+                  ? (funnels.flatMap(f => f.crm_stages).find(s => s.id === lead.stage_id)?.name ?? 'Etapa')
+                  : 'Etapa'}
+              </span>
+            </button>
+
+            {showStageDropdown && (
+              <div className="absolute top-full right-0 mt-1 w-56 bg-[#202c33] border border-[#2a3942] rounded-xl shadow-2xl z-50 overflow-hidden">
+                <div className="px-3 py-2 border-b border-[#2a3942]">
+                  <p className="text-[#8696a0] text-xs font-semibold uppercase tracking-wide">Mover para etapa</p>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {funnels.map(funnel => (
+                    <div key={funnel.id}>
+                      <p className="px-3 py-1.5 text-[#8696a0] text-[10px] font-semibold uppercase tracking-wider bg-[#0b141a]">
+                        {funnel.name}
+                      </p>
+                      {funnel.crm_stages.map(stage => (
+                        <button
+                          key={stage.id}
+                          onClick={() => updateStage(stage.id)}
+                          disabled={updatingStage}
+                          className={`w-full text-left px-4 py-2.5 text-sm transition flex items-center gap-2 ${
+                            lead?.stage_id === stage.id
+                              ? 'text-[#00a884] bg-[#0b141a]'
+                              : 'text-[#e9edef] hover:bg-[#2a3942]'
+                          }`}
+                        >
+                          {lead?.stage_id === stage.id && (
+                            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                          <span className={lead?.stage_id === stage.id ? '' : 'ml-5'}>{stage.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Botão de busca */}
         <button
           onClick={() => {

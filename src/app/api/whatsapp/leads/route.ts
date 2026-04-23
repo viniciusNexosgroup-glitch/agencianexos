@@ -15,6 +15,19 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const funnelId = req.nextUrl.searchParams.get('funnel_id')
+  const contactId = req.nextUrl.searchParams.get('contact_id')
+
+  if (contactId) {
+    const { data: lead } = await supabase()
+      .from('crm_leads')
+      .select('id, stage_id, contact_id, funnel_id')
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    return NextResponse.json({ lead: lead ?? null })
+  }
+
   let query = supabase()
     .from('crm_leads')
     .select('*, whatsapp_contacts(*), crm_stages(name, position)')
@@ -71,13 +84,14 @@ export async function DELETE(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  if (!session.is_admin) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
-  const { id, stageId, position, notes, title, value } = await req.json()
+  const { id, stageId, stage_id, position, notes, title, value } = await req.json()
   if (!id) return NextResponse.json({ error: 'id obrigatório' }, { status: 400 })
 
+  const resolvedStageId = stageId ?? stage_id
+
   const updates: Record<string, unknown> = {}
-  if (stageId !== undefined) updates.stage_id = stageId
+  if (resolvedStageId !== undefined) updates.stage_id = resolvedStageId
   if (position !== undefined) updates.position = position
   if (notes !== undefined) updates.notes = notes
   if (title !== undefined) updates.title = title
@@ -85,5 +99,12 @@ export async function PATCH(req: NextRequest) {
 
   const { error } = await supabase().from('crm_leads').update(updates).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ success: true })
+
+  const { data: lead } = await supabase()
+    .from('crm_leads')
+    .select('id, stage_id, contact_id, funnel_id')
+    .eq('id', id)
+    .single()
+
+  return NextResponse.json({ success: true, lead })
 }
