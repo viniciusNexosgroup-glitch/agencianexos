@@ -22,15 +22,12 @@ function sleep(ms: number) {
 }
 
 async function warmupGroup(instanceName: string, groupJid: string) {
-  // 1. Carrega info do grupo específico (força Baileys a carregar metadados)
-  await evFetch(`/group/findGroupInfos/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`).catch(() => null)
-  // 2. Ativa presence composing para estabelecer canal de envio
-  await evFetch(`/chat/presence/${instanceName}`, {
-    method: 'POST',
-    body: JSON.stringify({ number: groupJid, options: { presence: 'composing', delay: 500 } }),
-  }).catch(() => null)
-  // 3. Aguarda Baileys processar as chaves do grupo
-  await sleep(1500)
+  // Força Baileys a carregar participantes e chaves do grupo
+  await evFetch(`/group/fetchAllGroups/${instanceName}?getParticipants=true`).catch(() => null)
+  // Quando not-acceptable ocorre, o Baileys internamente tenta distribuir as chaves —
+  // aguarda tempo suficiente para isso completar antes do retry
+  await sleep(5000)
+  console.log(`[send] warm-up concluído para ${groupJid}`)
 }
 
 export async function POST(req: NextRequest) {
