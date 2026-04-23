@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     .from('conversation_assignments')
     .insert({
       contact_id,
-      from_agent: session.id,
+      from_agent: session.sub,
       to_agent: to_agent_id,
       note: note || null,
     })
