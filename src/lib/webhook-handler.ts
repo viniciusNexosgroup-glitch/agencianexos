@@ -17,61 +17,79 @@ export async function processWebhookEvent(body: any) {
 
   console.log('Webhook received:', event, 'instance:', instance)
 
+  // ── QR CODE ────────────────────────────────────────────────
   if (event === 'QRCODE_UPDATED') {
     const qr = body.data?.qrcode?.base64 || body.data?.base64 || null
-    console.log('QR received, length:', qr?.length)
     if (qr && instance) {
-      await db.from('whatsapp_instances').update({ qr_base64: qr }).eq('instance_name', instance)
+      await db.from('whatsapp_instances')
+        .update({ qr_base64: qr })
+        .eq('instance_name', instance)
     }
   }
 
+  // ── CONNECTION ─────────────────────────────────────────────
   if (event === 'CONNECTION_UPDATE') {
     const state = body.data?.state || body.data?.instance?.state || ''
     const status = state === 'open' ? 'connected' : 'disconnected'
     const updates: Record<string, unknown> = { status }
     if (status === 'connected') updates.qr_base64 = null
     if (instance) {
-      await db.from('whatsapp_instances').update(updates).eq('instance_name', instance)
+      await db.from('whatsapp_instances')
+        .update(updates)
+        .eq('instance_name', instance)
     }
   }
 
+  // ── GROUPS ─────────────────────────────────────────────────
   if (event === 'GROUPS_UPSERT' || event === 'GROUPS_UPDATE') {
     const groups = Array.isArray(body.data) ? body.data : [body.data]
-    for (const group of groups) {
-      const jid = group?.id || group?.remoteJid || ''
-      const subject = group?.subject || ''
-      if (jid && subject && instance) {
-        await db.from('whatsapp_contacts')
-          .upsert({ instance_name: instance, phone: jid, remote_jid: jid, name: subject }, { onConflict: 'instance_name,phone' })
-      }
-    }
+    // Paraleliza upserts de grupos em vez de fazer sequencial
+    await Promise.all(
+      groups.map(async (group: any) => {
+        const jid     = group?.id || group?.remoteJid || ''
+        const subject = group?.subject || ''
+        if (jid && subject && instance) {
+          await db.from('whatsapp_contacts').upsert(
+            { instance_name: instance, phone: jid, remote_jid: jid, name: subject },
+            { onConflict: 'instance_name,phone' }
+          )
+        }
+      })
+    )
   }
 
+  // ── MESSAGES ───────────────────────────────────────────────
   if (event === 'MESSAGES_UPSERT') {
     const messages = Array.isArray(body.data) ? body.data : [body.data]
+
     for (const msg of messages) {
       if (!msg?.key?.remoteJid) continue
       const remoteJid = msg.key.remoteJid
-      // Skip @lid (linked devices) and broadcast
+
       if (remoteJid.endsWith('@lid') || remoteJid === 'status@broadcast') continue
+
       const isGroup = remoteJid.endsWith('@g.us')
-      const phone = isGroup ? remoteJid : remoteJid.replace('@s.whatsapp.net', '')
-      const fromMe = msg.key.fromMe ?? false
-      const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
+      const phone   = isGroup ? remoteJid : remoteJid.replace('@s.whatsapp.net', '')
+      const fromMe  = msg.key.fromMe ?? false
+      const text    = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
       const timestamp = msg.messageTimestamp
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
         : new Date().toISOString()
 
-      // Sender info within group — Evolution API may put participant at root or under key
-      const participantJid = isGroup ? (msg.key.participant || msg.participant || '') : ''
+      // Participante do grupo (Evolution API pode colocar em msg.key.participant ou msg.participant)
+      const participantJid  = isGroup ? (msg.key.participant || msg.participant || '') : ''
       const participantName = isGroup ? (msg.pushName || participantJid.replace('@s.whatsapp.net', '')) : ''
 
-      const { data: existing } = await db.from('whatsapp_contacts')
-        .select('id, name').eq('instance_name', instance).eq('phone', phone).maybeSingle()
-
+      // Nome do contato: grupos buscam da Evolution API se não tiver nome real ainda
       let contactName: string
       if (isGroup) {
-        // If existing name looks like a JID or is missing, fetch real group name from Evolution API
+        // Verifica se já existe um nome real no banco antes de chamar a API
+        const { data: existing } = await db.from('whatsapp_contacts')
+          .select('name')
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+          .maybeSingle()
+
         const hasRealName = existing?.name && !existing.name.endsWith('@g.us') && existing.name !== phone
         if (hasRealName) {
           contactName = existing!.name
@@ -80,40 +98,26 @@ export async function processWebhookEvent(body: any) {
           contactName = fetched || existing?.name || phone
         }
       } else {
-        contactName = msg.pushName || existing?.name || phone
+        contactName = msg.pushName || phone
       }
 
-      await db.from('whatsapp_contacts').upsert({
-        instance_name: instance,
-        phone,
-        name: contactName,
-        remote_jid: remoteJid,
-        last_message_at: timestamp,
-      }, { onConflict: 'instance_name,phone' })
+      // Processa contato + mensagem de forma atômica via função PostgreSQL (BD-3)
+      const { error } = await db.rpc('process_whatsapp_message', {
+        p_instance_name:    instance,
+        p_phone:            phone,
+        p_message_id:       msg.key.id,
+        p_contact_name:     contactName,
+        p_remote_jid:       remoteJid,
+        p_body:             text,
+        p_from_me:          fromMe,
+        p_timestamp:        timestamp,
+        p_message_type:     Object.keys(msg.message || {})[0] || 'text',
+        p_participant_name: participantName || null,
+        p_participant_jid:  participantJid  || null,
+      })
 
-      const contactId = existing?.id || (await db.from('whatsapp_contacts')
-        .select('id').eq('instance_name', instance).eq('phone', phone).single()).data?.id
-
-      if (contactId) {
-        const msgPayload: Record<string, unknown> = {
-          contact_id: contactId,
-          instance_name: instance,
-          message_id: msg.key.id,
-          from_me: fromMe,
-          body: text,
-          message_type: Object.keys(msg.message || {})[0] || 'text',
-          timestamp,
-          participant_name: participantName || null,
-          participant_jid: participantJid || null,
-        }
-        const { error: msgErr } = await db.from('whatsapp_messages').upsert(msgPayload, { onConflict: 'message_id' })
-        if (msgErr) {
-          console.error('Erro ao salvar mensagem (tentando sem participant fields):', msgErr.message)
-          // Retry sem as colunas de participante caso não existam ainda
-          const { participant_name, participant_jid, ...payloadSemParticipant } = msgPayload
-          const { error: retryErr } = await db.from('whatsapp_messages').upsert(payloadSemParticipant, { onConflict: 'message_id' })
-          if (retryErr) console.error('Erro no retry:', retryErr.message)
-        }
+      if (error) {
+        console.error('Erro ao processar mensagem via RPC:', error.message)
       }
     }
   }
