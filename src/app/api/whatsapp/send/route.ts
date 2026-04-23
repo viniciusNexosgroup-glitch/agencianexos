@@ -17,6 +17,22 @@ async function evFetch(path: string, init?: RequestInit) {
   })
 }
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function warmupGroup(instanceName: string, groupJid: string) {
+  // 1. Carrega info do grupo específico (força Baileys a carregar metadados)
+  await evFetch(`/group/findGroupInfos/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`).catch(() => null)
+  // 2. Ativa presence composing para estabelecer canal de envio
+  await evFetch(`/chat/presence/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({ number: groupJid, options: { presence: 'composing', delay: 500 } }),
+  }).catch(() => null)
+  // 3. Aguarda Baileys processar as chaves do grupo
+  await sleep(1500)
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -50,20 +66,34 @@ export async function POST(req: NextRequest) {
   const isGroup = phone.includes('@g.us')
   const number = isGroup ? phone : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
-  const res = await evFetch(`/message/sendText/${instanceName}`, {
-    method: 'POST',
-    body: JSON.stringify({ number, text }),
-  })
+  async function doSend() {
+    return evFetch(`/message/sendText/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ number, text }),
+    })
+  }
 
-  const result = await res.json().catch(() => ({})) as Record<string, unknown>
+  let res = await doSend()
+  let result = await res.json().catch(() => ({})) as Record<string, unknown>
+
+  // Se grupo retornar not-acceptable, aquece a sessão e tenta de novo
+  if (!res.ok && isGroup) {
+    const msgs = ((result?.response as Record<string, unknown>)?.message ?? []) as unknown[]
+    const isNotAcceptable = JSON.stringify(msgs).includes('not-acceptable')
+    if (isNotAcceptable) {
+      console.log(`[send] not-acceptable para grupo ${number} — aquecendo sessão e tentando novamente...`)
+      await warmupGroup(instanceName, number)
+      res = await doSend()
+      result = await res.json().catch(() => ({})) as Record<string, unknown>
+    }
+  }
 
   if (!res.ok) {
     const msgs = (result?.response as Record<string, unknown>)?.message
     const detail = Array.isArray(msgs) ? msgs.flat().join(', ') : String(msgs ?? '')
     const errMsg = detail || result?.message as string || result?.error as string || JSON.stringify(result)
-    // Traduz erros comuns do WhatsApp/Baileys para mensagens legíveis
     if (errMsg.includes('not-acceptable')) {
-      return NextResponse.json({ error: 'Grupo com envio restrito a admins. Peça ao admin para liberar ou te promover a admin.' }, { status: 400 })
+      return NextResponse.json({ error: 'Não foi possível enviar ao grupo. Aguarde um momento e tente novamente — o WhatsApp pode estar sincronizando as chaves do grupo.' }, { status: 400 })
     }
     return NextResponse.json({ error: errMsg }, { status: 500 })
   }
