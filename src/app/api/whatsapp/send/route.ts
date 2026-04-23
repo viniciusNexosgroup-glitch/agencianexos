@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
 
   const res = await evFetch(`/message/sendText/${instanceName}`, {
     method: 'POST',
-    body: JSON.stringify({ number, text }),
+    body: JSON.stringify({ number, textMessage: { text } }),
   })
 
   const result = await res.json()

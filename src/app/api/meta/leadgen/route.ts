@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
         await fetch(`${process.env.EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', apikey: process.env.EVOLUTION_API_KEY! },
-          body: JSON.stringify({ number: `${phone}@s.whatsapp.net`, text: welcomeMsg }),
+          body: JSON.stringify({ number: `${phone}@s.whatsapp.net`, textMessage: { text: welcomeMsg } }),
         })
       } catch (err) {
         console.error('Erro ao enviar mensagem de boas-vindas:', err)
