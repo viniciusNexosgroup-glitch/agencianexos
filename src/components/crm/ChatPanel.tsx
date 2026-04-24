@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createBrowserClient } from '@/lib/supabase-browser'
 
 type Message = {
   id: string
@@ -174,8 +175,51 @@ export function ChatPanel({
     load()
     loadLead()
     loadCurrentAgent()
-    const interval = setInterval(load, 5000)
-    return () => clearInterval(interval)
+
+    // Realtime: nova mensagem aparece instantaneamente
+    const sb = createBrowserClient()
+    const channel = sb
+      .channel(`messages-${contact.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'whatsapp_messages',
+        filter: `contact_id=eq.${contact.id}`,
+      }, (payload) => {
+        if (payload.new && typeof payload.new === 'object') {
+          setMessages(prev => {
+            const msg = payload.new as Message
+            if (prev.some(m => m.id === msg.id)) return prev
+            return [...prev, msg]
+          })
+        }
+      })
+      .subscribe()
+
+    // Loop de polling como fallback
+    let active = true
+    async function pollLoop() {
+      while (active) {
+        await new Promise(r => setTimeout(r, 4000))
+        if (!active) break
+        try {
+          const sb2 = createBrowserClient()
+          const { data } = await sb2
+            .from('whatsapp_messages')
+            .select('id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal')
+            .eq('contact_id', contact.id)
+            .order('timestamp', { ascending: true })
+            .limit(100)
+          if (data) setMessages(data as Message[])
+        } catch { /* silencioso */ }
+      }
+    }
+    pollLoop()
+
+    return () => {
+      active = false
+      sb.removeChannel(channel)
+    }
   }, [contact.id])
 
   useEffect(() => {
@@ -218,10 +262,21 @@ export function ChatPanel({
   }, [showQuickReplies])
 
   async function load() {
-    const res = await fetch(`/api/whatsapp/messages?contact_id=${contact.id}`)
-    const data = await res.json()
-    setMessages(data.messages ?? [])
-    setLoading(false)
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('whatsapp_messages')
+        .select('id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal')
+        .eq('contact_id', contact.id)
+        .order('timestamp', { ascending: true })
+        .limit(100)
+      if (error) throw error
+      setMessages(data ?? [])
+      setLoading(false)
+    } catch (err) {
+      console.error('[CRM] Erro ao carregar mensagens:', err)
+      setLoading(false)
+    }
   }
 
   async function loadLead() {

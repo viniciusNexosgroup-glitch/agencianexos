@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ChatPanel } from './ChatPanel'
+import { createBrowserClient } from '@/lib/supabase-browser'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,8 @@ type Contact = {
   instance_name: string
   last_message_at: string | null
   remote_jid: string | null
+  unread_count: number
+  profile_pic_url?: string | null
 }
 
 type Tag = {
@@ -489,6 +492,9 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([])
   const [filterName, setFilterName] = useState('')
 
+  // Contagem local de não lidas (rastreada via Realtime, independente do banco)
+  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({})
+
   // Modais
   const [showImport, setShowImport] = useState(false)
   const [showTagManager, setShowTagManager] = useState(false)
@@ -499,14 +505,45 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     setAllTags(data.tags ?? data ?? [])
   }, [])
 
+  const chatContactRef = useRef<Contact | null>(null)
+
+  async function fetchContacts() {
+    const { data } = await createBrowserClient()
+      .from('whatsapp_contacts')
+      .select('id, name, phone, instance_name, last_message_at, remote_jid, unread_count, profile_pic_url')
+      .not('phone', 'like', '%@lid')
+      .not('phone', 'eq', 'status@broadcast')
+      .order('last_message_at', { ascending: false })
+    return data ?? []
+  }
+
+  function applyContacts(raw: any[]) {
+    const currentId = chatContactRef.current?.id
+    const list: Contact[] = raw.map((c: any) => ({
+      ...c,
+      unread_count: Number(c.unread_count ?? 0),
+    }))
+    const merged = list.map(c =>
+      currentId && c.id === currentId ? { ...c, unread_count: 0 } : c
+    )
+    merged.sort((a, b) => {
+      if (b.unread_count !== a.unread_count) return b.unread_count - a.unread_count
+      const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+      const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+      return tb - ta
+    })
+    setContacts(merged)
+  }
+
   async function load() {
-    const res = await fetch('/api/whatsapp/contacts')
-    const data = await res.json()
-    const list: Contact[] = data.contacts ?? []
-    setContacts(list)
-    setLoading(false)
-    // Carrega tags de cada contato em batch (opcional: endpoint /api/whatsapp/contacts/tags se existir)
-    // Por ora, carregamos individualmente só os contatos visíveis conforme necessário
+    try {
+      const raw = await fetchContacts()
+      applyContacts(raw)
+    } catch (err) {
+      console.error('[CRM] Erro inicial:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function fetchContactTags(contactId: string) {
@@ -524,12 +561,91 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   useEffect(() => {
     load()
     fetchTags()
-    // Carrega instâncias e filtros salvos
     fetch('/api/whatsapp/instance').then(r => r.json()).then(d => setInstances(d.instances ?? d ?? []))
     try {
       const saved = JSON.parse(localStorage.getItem('crm_saved_filters') || '[]')
       setSavedFilters(saved)
     } catch { /* ignore */ }
+
+    // Realtime: atualiza instantaneamente quando contato muda
+    const sb = createBrowserClient()
+    const channel = sb
+      .channel('contacts-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_contacts' }, async (payload) => {
+        // Atualiza apenas o contato que mudou sem rebuscar tudo
+        if (payload.new && typeof payload.new === 'object') {
+          const updated = payload.new as any
+          setContacts(prev => {
+            const exists = prev.some(c => c.id === updated.id)
+            const currentId = chatContactRef.current?.id
+            const newContact: Contact = {
+              ...updated,
+              unread_count: currentId === updated.id ? 0 : Number(updated.unread_count ?? 0),
+            }
+            const next = exists
+              ? prev.map(c => c.id === updated.id ? newContact : c)
+              : [newContact, ...prev]
+            return [...next].sort((a, b) => {
+              if (b.unread_count !== a.unread_count) return b.unread_count - a.unread_count
+              const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+              const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+              return tb - ta
+            })
+          })
+        }
+      })
+      .subscribe()
+
+    // Realtime em mensagens: move para o topo e incrementa badge
+    const msgChannel = sb
+      .channel('new-messages-badge')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'whatsapp_messages',
+      }, (payload) => {
+        const msg = payload.new as any
+        if (!msg?.contact_id) return
+
+        const isOpenChat = msg.contact_id === chatContactRef.current?.id
+
+        // Move contato para o topo sempre que chegar mensagem nova (qualquer remetente)
+        if (!isOpenChat) {
+          setContacts(prev => {
+            const idx = prev.findIndex(c => c.id === msg.contact_id)
+            if (idx <= 0) return prev
+            const updated = [...prev]
+            const [moved] = updated.splice(idx, 1)
+            return [moved, ...updated]
+          })
+        }
+
+        // Incrementa badge apenas para mensagens recebidas (não enviadas por mim)
+        if (!msg.from_me && !isOpenChat) {
+          setUnreadMap(prev => ({ ...prev, [msg.contact_id]: (prev[msg.contact_id] ?? 0) + 1 }))
+        }
+      })
+      .subscribe()
+
+    // Loop de polling como fallback (caso Realtime não dispare)
+    let active = true
+    async function pollLoop() {
+      while (active) {
+        await new Promise(r => setTimeout(r, 4000))
+        if (!active) break
+        try {
+          const raw = await fetchContacts()
+          applyContacts(raw)
+        } catch { /* silencioso */ }
+      }
+    }
+    pollLoop()
+
+    return () => {
+      active = false
+      sb.removeChannel(channel)
+      sb.removeChannel(msgChannel)
+    }
   }, [])
 
   // Carrega tags dos contatos visíveis quando lista muda
@@ -574,8 +690,17 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   })
 
   function handleSelectContact(contact: Contact) {
+    chatContactRef.current = contact
     setChatContact(contact)
     fetchContactTags(contact.id)
+    // Zera badge local e no banco ao abrir conversa
+    setUnreadMap(prev => ({ ...prev, [contact.id]: 0 }))
+    setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, unread_count: 0 } : c))
+    fetch(`/api/whatsapp/contacts/${contact.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'mark_read' }),
+    }).catch(() => {})
   }
 
   return (
@@ -726,6 +851,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
             )}
             {filtered.map(contact => {
               const tags = contactTagsMap[contact.id] ?? []
+              const unread = (unreadMap[contact.id] ?? 0) + Number(contact.unread_count ?? 0)
               return (
                 <button
                   key={contact.id}
@@ -752,18 +878,27 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
                   {/* Info */}
                   <div className="flex-1 min-w-0 text-left">
                     <div className="flex items-center justify-between">
-                      <span className="text-white text-sm font-medium truncate">{contact.name}</span>
-                      {contact.last_message_at && (
-                        <span className="text-[#8696a0] text-xs flex-shrink-0 ml-2">
-                          {formatTime(contact.last_message_at)}
+                      <span className={`text-sm truncate ${unread > 0 ? 'text-white font-semibold' : 'text-white font-medium'}`}>{contact.name}</span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                        {contact.last_message_at && (
+                          <span className={`text-xs ${unread > 0 ? 'text-[#00a884]' : 'text-[#8696a0]'}`}>
+                            {formatTime(contact.last_message_at)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                        {isGroup(contact)
+                          ? <span className="text-[#8696a0] text-xs truncate">Grupo</span>
+                          : <span className="text-[#8696a0] text-xs truncate">{contact.phone}</span>
+                        }
+                      </div>
+                      {unread > 0 && (
+                        <span className="ml-1 flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-[#00a884] text-white text-[11px] font-bold flex items-center justify-center leading-none">
+                          {unread > 99 ? '99+' : unread}
                         </span>
                       )}
-                    </div>
-                    <div className="flex items-center gap-1 mt-0.5">
-                      {isGroup(contact)
-                        ? <span className="text-[#8696a0] text-xs truncate">Grupo</span>
-                        : <span className="text-[#8696a0] text-xs truncate">{contact.phone}</span>
-                      }
                     </div>
                     {/* Tags do contato */}
                     {tags.length > 0 && (
@@ -785,7 +920,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
           {chatContact ? (
             <ChatPanelWithTags
               contact={chatContact}
-              onClose={() => setChatContact(null)}
+              onClose={() => { chatContactRef.current = null; setChatContact(null) }}
               funnels={funnels}
             />
           ) : (

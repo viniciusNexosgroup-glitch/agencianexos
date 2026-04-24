@@ -115,6 +115,14 @@ export async function processWebhookEvent(body: any) {
           const fetched = await fetchGroupInfo(instance, remoteJid)
           contactName = fetched || existing?.name || phone
         }
+      } else if (fromMe) {
+        // Para mensagens enviadas por mim, pushName é meu próprio nome — preservar nome existente do contato
+        const { data: existing } = await db.from('whatsapp_contacts')
+          .select('name')
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+          .maybeSingle()
+        contactName = existing?.name || phone
       } else {
         contactName = msg.pushName || phone
       }
@@ -147,6 +155,11 @@ export async function processWebhookEvent(body: any) {
 
       if (error) {
         console.error('Erro ao processar mensagem via RPC:', error.message)
+      }
+
+      // Incrementa não lidas para qualquer mensagem recebida (individual ou grupo)
+      if (!fromMe) {
+        await db.rpc('increment_unread_count', { p_instance_name: instance, p_phone: phone })
       }
 
       if (!error && referral && Object.values(utm).some(v => v !== null)) {

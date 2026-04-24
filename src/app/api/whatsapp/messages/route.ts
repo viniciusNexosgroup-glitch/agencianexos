@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
 
+export const dynamic = 'force-dynamic'
+
 function supabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,5 +26,7 @@ export async function GET(req: NextRequest) {
     .order('timestamp', { ascending: true })
     .limit(100)
 
-  return NextResponse.json({ messages: data ?? [] })
+  return NextResponse.json({ messages: data ?? [] }, {
+    headers: { 'Cache-Control': 'no-store' },
+  })
 }
