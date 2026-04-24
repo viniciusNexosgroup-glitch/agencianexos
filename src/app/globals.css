@@ -4,6 +4,14 @@
 
 :root { color-scheme: dark; }
 
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   background-color: #080b12;
   color: #f1f5f9;

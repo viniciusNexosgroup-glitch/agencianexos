@@ -327,7 +327,7 @@ export function Sidebar({ userName, isAdmin }: { userName: string; isAdmin: bool
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 flex flex-col items-center py-3 gap-1">
+      <nav className="flex-1 flex flex-col items-center py-3 gap-1 overflow-y-auto overflow-x-hidden scrollbar-none">
         {filtered.map(item => {
           const active = isActive(item)
           return (
