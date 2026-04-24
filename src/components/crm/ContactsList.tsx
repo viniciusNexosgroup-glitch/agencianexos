@@ -851,7 +851,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
             )}
             {filtered.map(contact => {
               const tags = contactTagsMap[contact.id] ?? []
-              const unread = (unreadMap[contact.id] ?? 0) + Number(contact.unread_count ?? 0)
+              const unread = chatContact?.id === contact.id ? 0 : (unreadMap[contact.id] ?? 0) + Number(contact.unread_count ?? 0)
               return (
                 <button
                   key={contact.id}
