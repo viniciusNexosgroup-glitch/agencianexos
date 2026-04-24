@@ -120,9 +120,12 @@ function VideoPlayer({
   const [videoSrc, setVideoSrc] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
-  async function fetchVideo() {
-    if (videoSrc || loading) return
+  async function openModal() {
+    setModalOpen(true)
+    if (videoSrc) return
     setLoading(true)
     setError(false)
     try {
@@ -138,39 +141,120 @@ function VideoPlayer({
     }
   }
 
-  if (videoSrc) {
-    return (
-      <video
-        controls
-        autoPlay
-        className="rounded-lg max-w-[260px] max-h-[220px] mb-1"
-        style={{ background: '#000' }}
-        src={videoSrc}
-      />
-    )
+  function closeModal() {
+    setModalOpen(false)
+    videoRef.current?.pause()
+  }
+
+  function toggleFullscreen() {
+    if (!videoRef.current) return
+    if (document.fullscreenElement) {
+      document.exitFullscreen()
+    } else {
+      videoRef.current.requestFullscreen?.()
+    }
   }
 
   return (
-    <div
-      className="relative rounded-lg overflow-hidden cursor-pointer mb-1"
-      style={{ maxWidth: 260, maxHeight: 180 }}
-      onClick={fetchVideo}
-    >
-      <img src={thumbnail} alt="Vídeo" className="w-full h-full object-cover" />
-      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-        {loading ? (
-          <div className="w-10 h-10 rounded-full border-2 border-white border-t-transparent animate-spin" />
-        ) : error ? (
-          <span className="text-white text-xs px-2 text-center">Não foi possível carregar</span>
-        ) : (
-          <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
-            <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+    <>
+      {/* Thumbnail no chat */}
+      <div
+        className="relative rounded-lg overflow-hidden cursor-pointer mb-1 group"
+        style={{ width: 220, height: 160 }}
+        onClick={openModal}
+      >
+        <img src={thumbnail} alt="Vídeo" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/55 transition-colors flex items-center justify-center">
+          <div className="w-14 h-14 rounded-full bg-black/60 flex items-center justify-center shadow-lg">
+            <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z"/>
             </svg>
           </div>
-        )}
+        </div>
+        {/* Indicador de vídeo */}
+        <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 rounded px-1.5 py-0.5">
+          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/>
+          </svg>
+          <span className="text-white text-[10px]">Vídeo</span>
+        </div>
       </div>
-    </div>
+
+      {/* Modal de vídeo */}
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
+          onClick={closeModal}
+        >
+          <div
+            className="relative flex flex-col items-center"
+            style={{ maxWidth: '90vw', maxHeight: '90vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Controles superiores */}
+            <div className="flex items-center justify-between w-full px-2 pb-3">
+              <span className="text-white/60 text-xs">Vídeo</span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleFullscreen}
+                  className="text-white/70 hover:text-white transition p-1"
+                  title="Tela cheia"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+                  </svg>
+                </button>
+                <button
+                  onClick={closeModal}
+                  className="text-white/70 hover:text-white transition p-1"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Player */}
+            <div className="relative rounded-xl overflow-hidden bg-black shadow-2xl" style={{ minWidth: 280 }}>
+              {loading && (
+                <div className="flex items-center justify-center" style={{ width: 320, height: 240 }}>
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 rounded-full border-2 border-white border-t-transparent animate-spin"/>
+                    <span className="text-white/60 text-sm">Carregando vídeo...</span>
+                  </div>
+                </div>
+              )}
+              {error && (
+                <div className="flex items-center justify-center" style={{ width: 320, height: 200 }}>
+                  <div className="flex flex-col items-center gap-2 px-6 text-center">
+                    <svg className="w-10 h-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span className="text-white/60 text-sm">Não foi possível carregar o vídeo</span>
+                    <button
+                      onClick={() => { setError(false); setVideoSrc(null); openModal() }}
+                      className="text-[#00a884] text-sm hover:underline mt-1"
+                    >Tentar novamente</button>
+                  </div>
+                </div>
+              )}
+              {videoSrc && !error && (
+                <video
+                  ref={videoRef}
+                  controls
+                  autoPlay
+                  className="block"
+                  style={{ maxWidth: '85vw', maxHeight: '75vh' }}
+                  src={videoSrc}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
