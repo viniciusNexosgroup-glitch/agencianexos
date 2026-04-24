@@ -65,7 +65,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string) {
       enabled: true,
       webhookByEvents: false,
       webhookBase64: false,
-      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED', 'GROUPS_UPSERT', 'GROUPS_UPDATE'],
     }),
   })
   const data = await res.json()
@@ -102,6 +102,25 @@ export async function fetchGroupInfo(instanceName: string, groupJid: string): Pr
     if (!res.ok) return null
     const data = await res.json()
     return data?.subject || data?.name || null
+  } catch {
+    return null
+  }
+}
+
+export async function getMediaBase64(
+  instanceName: string,
+  message: unknown
+): Promise<{ base64: string; mimetype: string } | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ message }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data?.base64) return null
+    return { base64: data.base64, mimetype: data.mimetype || 'application/octet-stream' }
   } catch {
     return null
   }

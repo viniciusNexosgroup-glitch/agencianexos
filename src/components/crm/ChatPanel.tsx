@@ -12,6 +12,8 @@ type Message = {
   participant_name?: string | null
   participant_jid?: string | null
   is_internal?: boolean
+  media_url?: string | null
+  reactions?: Record<string, string> | null
 }
 
 type Contact = {
@@ -194,6 +196,21 @@ export function ChatPanel({
           })
         }
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'whatsapp_messages',
+        filter: `contact_id=eq.${contact.id}`,
+      }, (payload) => {
+        if (payload.new && typeof payload.new === 'object') {
+          const updated = payload.new as Message
+          setMessages(prev => prev.map(m =>
+            m.id === updated.id
+              ? { ...m, reactions: updated.reactions, media_url: updated.media_url }
+              : m
+          ))
+        }
+      })
       .subscribe()
 
     // Loop de polling como fallback
@@ -206,7 +223,7 @@ export function ChatPanel({
           const sb2 = createBrowserClient()
           const { data } = await sb2
             .from('whatsapp_messages')
-            .select('id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal')
+            .select('id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions')
             .eq('contact_id', contact.id)
             .order('timestamp', { ascending: true })
             .limit(100)
@@ -266,7 +283,7 @@ export function ChatPanel({
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('whatsapp_messages')
-        .select('id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal')
+        .select('id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions')
         .eq('contact_id', contact.id)
         .order('timestamp', { ascending: true })
         .limit(100)
@@ -795,11 +812,76 @@ export function ChatPanel({
                         {senderName}
                       </p>
                     )}
-                    <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                      {msg.body
-                        ? (searchQuery ? highlightText(msg.body, searchQuery) : msg.body)
-                        : <span className="italic text-[#8696a0] text-xs">[mídia]</span>}
-                    </p>
+                    {/* Imagem */}
+                    {(msg.message_type === 'imageMessage' || msg.message_type === 'stickerMessage') && (
+                      msg.media_url
+                        ? <img
+                            src={msg.media_url}
+                            alt="Imagem"
+                            className="rounded-lg max-w-[260px] max-h-[260px] object-cover cursor-pointer mb-1"
+                            onClick={() => window.open(msg.media_url!, '_blank')}
+                          />
+                        : <span className="italic text-[#8696a0] text-xs">📷 Imagem</span>
+                    )}
+
+                    {/* Áudio */}
+                    {(msg.message_type === 'audioMessage' || msg.message_type === 'ptvMessage') && (
+                      msg.media_url
+                        ? <audio controls className="w-full max-w-[260px] mb-1" style={{ height: '36px' }}>
+                            <source src={msg.media_url} />
+                          </audio>
+                        : <span className="italic text-[#8696a0] text-xs">🎵 Áudio</span>
+                    )}
+
+                    {/* Vídeo */}
+                    {msg.message_type === 'videoMessage' && (
+                      <span className="italic text-[#8696a0] text-xs">🎥 Vídeo</span>
+                    )}
+
+                    {/* Documento */}
+                    {msg.message_type === 'documentMessage' && (
+                      <span className="italic text-[#8696a0] text-xs">📄 Documento</span>
+                    )}
+
+                    {/* Texto (incluindo legenda de imagem/vídeo) */}
+                    {msg.message_type !== 'imageMessage' &&
+                     msg.message_type !== 'stickerMessage' &&
+                     msg.message_type !== 'audioMessage' &&
+                     msg.message_type !== 'ptvMessage' &&
+                     msg.message_type !== 'videoMessage' &&
+                     msg.message_type !== 'documentMessage' && (
+                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                        {msg.body
+                          ? (searchQuery ? highlightText(msg.body, searchQuery) : msg.body)
+                          : <span className="italic text-[#8696a0] text-xs">[mídia]</span>}
+                      </p>
+                    )}
+
+                    {/* Legenda de imagem/vídeo */}
+                    {(msg.message_type === 'imageMessage' || msg.message_type === 'videoMessage') && msg.body && (
+                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed mt-1">{msg.body}</p>
+                    )}
+
+                    {/* Reações */}
+                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                      <div className="flex gap-1 mt-1.5 flex-wrap">
+                        {Object.entries(msg.reactions as Record<string, string>)
+                          .filter(([, emoji]) => emoji)
+                          .reduce((acc, [, emoji]) => {
+                            const ex = acc.find(e => e.emoji === emoji)
+                            if (ex) ex.count++
+                            else acc.push({ emoji, count: 1 })
+                            return acc
+                          }, [] as { emoji: string; count: number }[])
+                          .map(({ emoji, count }) => (
+                            <span key={emoji} className="text-xs bg-[#2a3942] rounded-full px-1.5 py-0.5 flex items-center gap-0.5 border border-[#3b4a54]">
+                              {emoji}{count > 1 && <span className="text-[#8696a0] text-[10px] ml-0.5">{count}</span>}
+                            </span>
+                          ))
+                        }
+                      </div>
+                    )}
+
                     <p className={`text-[10px] mt-1 text-right ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>
                       {formatTime(msg.timestamp)}
                       {msg.from_me && !isIntMsg && <span className="ml-1">✓✓</span>}

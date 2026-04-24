@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { fetchGroupInfo } from './evolution'
+import { fetchGroupInfo, getMediaBase64 } from './evolution'
 
 function supabase() {
   return createClient(
@@ -89,7 +89,34 @@ export async function processWebhookEvent(body: any) {
       const isGroup = remoteJid.endsWith('@g.us')
       const phone   = isGroup ? remoteJid : remoteJid.replace('@s.whatsapp.net', '')
       const fromMe  = msg.key.fromMe ?? false
-      const text    = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
+      const msgType = Object.keys(msg.message || {})[0] || 'text'
+
+      // Reação: atualiza a mensagem alvo e não insere nova mensagem
+      if (msgType === 'reactionMessage') {
+        const reaction = msg.message.reactionMessage
+        const targetMsgId = reaction?.key?.id
+        const emoji = reaction?.text || ''
+        if (targetMsgId) {
+          const reactor = fromMe ? 'me' : (msg.key.participant?.replace('@s.whatsapp.net', '') || phone)
+          const { data: targetMsg } = await db.from('whatsapp_messages')
+            .select('id, reactions')
+            .eq('message_id', targetMsgId)
+            .maybeSingle()
+          if (targetMsg) {
+            const reactions = { ...(targetMsg.reactions || {}) }
+            if (emoji) reactions[reactor] = emoji
+            else delete reactions[reactor]
+            await db.from('whatsapp_messages').update({ reactions }).eq('id', targetMsg.id)
+          }
+        }
+        continue
+      }
+
+      const text    = msg.message?.conversation
+        || msg.message?.extendedTextMessage?.text
+        || msg.message?.imageMessage?.caption
+        || msg.message?.videoMessage?.caption
+        || ''
       const timestamp = msg.messageTimestamp
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
         : new Date().toISOString()
@@ -148,13 +175,30 @@ export async function processWebhookEvent(body: any) {
         p_body:             text,
         p_from_me:          fromMe,
         p_timestamp:        timestamp,
-        p_message_type:     Object.keys(msg.message || {})[0] || 'text',
+        p_message_type:     msgType,
         p_participant_name: participantName || null,
         p_participant_jid:  participantJid  || null,
       })
 
       if (error) {
         console.error('Erro ao processar mensagem via RPC:', error.message)
+      }
+
+      // Baixar mídia (imagem, áudio, sticker) e armazenar como base64
+      const DOWNLOADABLE = ['imageMessage', 'audioMessage', 'stickerMessage', 'ptvMessage']
+      if (!error && DOWNLOADABLE.includes(msgType)) {
+        try {
+          const mediaInfo = await getMediaBase64(instance, msg)
+          if (mediaInfo?.base64) {
+            const mime = mediaInfo.mimetype.split(';')[0].trim()
+            const dataUrl = `data:${mime};base64,${mediaInfo.base64}`
+            await db.from('whatsapp_messages')
+              .update({ media_url: dataUrl })
+              .eq('message_id', msg.key.id)
+          }
+        } catch {
+          // falha silenciosa: mensagem fica sem media_url
+        }
       }
 
       // Incrementa não lidas para qualquer mensagem recebida (individual ou grupo)
