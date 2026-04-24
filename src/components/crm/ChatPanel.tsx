@@ -42,6 +42,7 @@ type QuickReply = {
   id: string
   shortcut: string
   content: string
+  type: 'text' | 'audio'
 }
 
 type ScheduledMessage = {
@@ -434,6 +435,20 @@ export function ChatPanel({
   const [iListBtn, setIListBtn] = useState('')
   const [iSections, setISections] = useState<InteractiveSection[]>([{ title: '', rows: [{ id: '1', title: '' }] }])
   const [sendingInteractive, setSendingInteractive] = useState(false)
+
+  // Gerenciador de respostas rápidas
+  const [showQRManager, setShowQRManager] = useState(false)
+  const [newQRTab, setNewQRTab] = useState<'text' | 'audio'>('text')
+  const [newQRShortcut, setNewQRShortcut] = useState('')
+  const [newQRContent, setNewQRContent] = useState('')
+  const [savingQR, setSavingQR] = useState(false)
+  const [deletingQR, setDeletingQR] = useState<string | null>(null)
+  const [recordingQR, setRecordingQR] = useState(false)
+  const [recordingQRSeconds, setRecordingQRSeconds] = useState(0)
+  const [pendingQRAudio, setPendingQRAudio] = useState<string | null>(null)
+  const qrMediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const qrAudioChunksRef = useRef<Blob[]>([])
+  const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     setMessages([])
@@ -946,6 +961,150 @@ export function ChatPanel({
     }
   }
 
+  async function sendQuickReply(qr: QuickReply) {
+    setShowQRManager(false)
+    if (qr.type === 'audio' || qr.content.startsWith('data:audio')) {
+      const base64 = qr.content.split(',')[1]
+      const optimistic: Message = {
+        id: crypto.randomUUID(),
+        from_me: true,
+        body: '',
+        timestamp: new Date().toISOString(),
+        message_type: 'audioMessage',
+        media_url: qr.content,
+      }
+      setMessages(prev => [...prev, optimistic])
+      try {
+        const res = await fetch('/api/whatsapp/send-audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instanceName: contact.instance_name, phone: contact.remote_jid || contact.phone, audio: base64 }),
+        })
+        const data = await res.json()
+        if (data.error) {
+          setError('Erro ao enviar áudio: ' + data.error)
+          setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+        } else {
+          setTimeout(load, 3000)
+        }
+      } catch {
+        setError('Erro de conexão ao enviar áudio.')
+        setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+      }
+    } else {
+      const body = qr.content
+      setSending(true)
+      const optimistic: Message = {
+        id: crypto.randomUUID(),
+        from_me: true,
+        body,
+        timestamp: new Date().toISOString(),
+        message_type: 'text',
+      }
+      setMessages(prev => [...prev, optimistic])
+      try {
+        const res = await fetch('/api/whatsapp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instanceName: contact.instance_name, contactId: contact.id, phone: contact.remote_jid || contact.phone, text: body }),
+        })
+        const result = await res.json()
+        if (result.error) {
+          setError(result.error)
+          setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+        } else {
+          setTimeout(load, 1500)
+        }
+      } catch {
+        setError('Erro de conexão.')
+        setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+      } finally {
+        setSending(false)
+      }
+    }
+  }
+
+  async function saveQuickReply() {
+    const shortcut = newQRShortcut.trim()
+    const content = newQRTab === 'audio' ? (pendingQRAudio || '') : newQRContent.trim()
+    if (!shortcut || !content) return
+    setSavingQR(true)
+    try {
+      const res = await fetch('/api/whatsapp/quick-replies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shortcut, content, type: newQRTab }),
+      })
+      const data = await res.json()
+      if (data.quickReply) {
+        setQuickReplies(prev => [...prev, data.quickReply].sort((a, b) => a.shortcut.localeCompare(b.shortcut)))
+        setNewQRShortcut('')
+        setNewQRContent('')
+        setPendingQRAudio(null)
+        setNewQRTab('text')
+      } else {
+        setError(data.error || 'Erro ao salvar.')
+      }
+    } finally {
+      setSavingQR(false)
+    }
+  }
+
+  async function deleteQuickReply(id: string) {
+    setDeletingQR(id)
+    try {
+      const res = await fetch(`/api/whatsapp/quick-replies?id=${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setQuickReplies(prev => prev.filter(q => q.id !== id))
+      }
+    } finally {
+      setDeletingQR(null)
+    }
+  }
+
+  async function startQRRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream)
+      qrMediaRecorderRef.current = mr
+      qrAudioChunksRef.current = []
+      mr.ondataavailable = (e) => { if (e.data.size > 0) qrAudioChunksRef.current.push(e.data) }
+      mr.onstop = () => {
+        stream.getTracks().forEach(t => t.stop())
+        const blob = new Blob(qrAudioChunksRef.current, { type: mr.mimeType || 'audio/webm' })
+        const reader = new FileReader()
+        reader.onloadend = () => { setPendingQRAudio(reader.result as string) }
+        reader.readAsDataURL(blob)
+        setRecordingQR(false)
+        setRecordingQRSeconds(0)
+      }
+      mr.start()
+      setRecordingQR(true)
+      setRecordingQRSeconds(0)
+      setPendingQRAudio(null)
+      qrTimerRef.current = setInterval(() => setRecordingQRSeconds(s => s + 1), 1000)
+    } catch {
+      setError('Permissão de microfone necessária.')
+    }
+  }
+
+  function stopQRRecording() {
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current)
+    qrMediaRecorderRef.current?.stop()
+  }
+
+  function cancelQRRecording() {
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current)
+    if (qrMediaRecorderRef.current && qrMediaRecorderRef.current.state !== 'inactive') {
+      qrMediaRecorderRef.current.ondataavailable = null
+      qrMediaRecorderRef.current.onstop = null
+      qrMediaRecorderRef.current.stop()
+    }
+    setRecordingQR(false)
+    setRecordingQRSeconds(0)
+    setPendingQRAudio(null)
+  }
+
   const searchTerm = text.startsWith('/') ? text.slice(1).toLowerCase() : ''
   const filteredQR = searchTerm
     ? quickReplies.filter(q =>
@@ -1037,6 +1196,173 @@ export function ChatPanel({
                 <p className="text-[#8696a0] text-xs italic">Contato não encontrado no CRM</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Gerenciador de respostas rápidas ── */}
+      {showQRManager && (
+        <div className="absolute inset-0 bg-[#0b141a] z-30 flex flex-col">
+          <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] flex-shrink-0">
+            <button onClick={() => setShowQRManager(false)} className="text-[#8696a0] hover:text-white transition p-1">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h2 className="text-white font-medium text-sm flex items-center gap-2">
+              <svg className="w-4 h-4 text-[#00a884]" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              </svg>
+              Respostas Rápidas
+            </h2>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {/* Lista de respostas salvas */}
+            {qrLoading ? (
+              <p className="text-[#8696a0] text-xs text-center py-6">Carregando...</p>
+            ) : quickReplies.length === 0 ? (
+              <p className="text-[#8696a0] text-xs text-center py-6 italic">Nenhuma resposta rápida criada ainda</p>
+            ) : (
+              <div className="divide-y divide-[#2a3942]">
+                {quickReplies.map(qr => (
+                  <div key={qr.id} className="flex items-center gap-3 px-4 py-3 hover:bg-[#111b21] transition group">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#202c33] flex items-center justify-center">
+                      {qr.type === 'audio' ? (
+                        <svg className="w-4 h-4 text-[#00a884]" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zm-1 13.93V19H9v2h6v-2h-2v-2.07A7.001 7.001 0 0019 12h-2a5 5 0 01-10 0H5a7.001 7.001 0 006 6.93z"/>
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4 text-[#00a884]" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                        </svg>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#e9edef] text-sm font-medium">/{qr.shortcut}</p>
+                      {qr.type === 'audio' ? (
+                        <AudioPlayer src={qr.content} fromMe={false} />
+                      ) : (
+                        <p className="text-[#8696a0] text-xs truncate mt-0.5">
+                          {qr.content.length > 60 ? qr.content.slice(0, 60) + '…' : qr.content}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => sendQuickReply(qr)}
+                        title="Enviar agora"
+                        className="w-8 h-8 rounded-full bg-[#00a884] hover:bg-[#06cf9c] text-white flex items-center justify-center transition opacity-0 group-hover:opacity-100"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => deleteQuickReply(qr.id)}
+                        disabled={deletingQR === qr.id}
+                        title="Excluir"
+                        className="w-8 h-8 rounded-full hover:bg-red-500/20 text-[#8696a0] hover:text-red-400 flex items-center justify-center transition opacity-0 group-hover:opacity-100"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Formulário nova resposta */}
+            <div className="px-4 py-4 border-t border-[#2a3942] mt-2">
+              <p className="text-[#8696a0] text-xs font-semibold uppercase tracking-wide mb-3">Nova resposta rápida</p>
+
+              {/* Atalho */}
+              <div className="mb-3">
+                <label className="text-[#8696a0] text-xs mb-1 block">Atalho (ex: oi, preco, obrigado)</label>
+                <div className="flex items-center bg-[#2a3942] rounded-lg px-3 py-2 gap-1">
+                  <span className="text-[#00a884] font-mono text-sm">/</span>
+                  <input
+                    type="text"
+                    value={newQRShortcut}
+                    onChange={e => setNewQRShortcut(e.target.value.replace(/\s/g, '').toLowerCase())}
+                    placeholder="atalho"
+                    className="flex-1 bg-transparent text-[#e9edef] text-sm outline-none placeholder-[#8696a0]"
+                  />
+                </div>
+              </div>
+
+              {/* Tabs tipo */}
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => { setNewQRTab('text'); setPendingQRAudio(null); cancelQRRecording() }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${newQRTab === 'text' ? 'bg-[#00a884] text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'}`}
+                >
+                  Texto
+                </button>
+                <button
+                  onClick={() => { setNewQRTab('audio'); setNewQRContent('') }}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition ${newQRTab === 'audio' ? 'bg-[#00a884] text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'}`}
+                >
+                  Áudio
+                </button>
+              </div>
+
+              {/* Conteúdo */}
+              {newQRTab === 'text' ? (
+                <textarea
+                  value={newQRContent}
+                  onChange={e => setNewQRContent(e.target.value)}
+                  placeholder="Texto da mensagem..."
+                  rows={3}
+                  className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none placeholder-[#8696a0] resize-none mb-3"
+                />
+              ) : (
+                <div className="mb-3">
+                  {!recordingQR && !pendingQRAudio && (
+                    <button
+                      onClick={startQRRecording}
+                      className="w-full py-3 bg-[#2a3942] hover:bg-[#3d4f5a] rounded-lg text-[#8696a0] hover:text-white transition flex items-center justify-center gap-2 text-sm"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                      </svg>
+                      Gravar áudio
+                    </button>
+                  )}
+                  {recordingQR && (
+                    <div className="flex items-center gap-3 bg-[#2a3942] rounded-lg px-3 py-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0"/>
+                      <span className="text-[#e9edef] text-sm flex-1">
+                        {String(Math.floor(recordingQRSeconds / 60)).padStart(2,'0')}:{String(recordingQRSeconds % 60).padStart(2,'0')}
+                      </span>
+                      <button onClick={cancelQRRecording} className="text-[#8696a0] hover:text-red-400 transition text-xs">Cancelar</button>
+                      <button onClick={stopQRRecording} className="px-3 py-1 bg-[#00a884] hover:bg-[#06cf9c] text-white text-xs rounded-lg transition">Parar</button>
+                    </div>
+                  )}
+                  {pendingQRAudio && !recordingQR && (
+                    <div className="bg-[#2a3942] rounded-lg p-3">
+                      <AudioPlayer src={pendingQRAudio} fromMe={false} />
+                      <button
+                        onClick={() => { setPendingQRAudio(null) }}
+                        className="mt-2 text-[#8696a0] hover:text-red-400 text-xs transition"
+                      >
+                        Regravar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                onClick={saveQuickReply}
+                disabled={savingQR || !newQRShortcut.trim() || (newQRTab === 'text' ? !newQRContent.trim() : !pendingQRAudio)}
+                className="w-full py-2.5 bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#2a3942] disabled:text-[#8696a0] text-white rounded-lg text-sm font-medium transition"
+              >
+                {savingQR ? 'Salvando...' : 'Salvar resposta rápida'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1610,18 +1936,36 @@ export function ChatPanel({
                 <p className="text-[#8696a0] text-xs text-center py-3">Nenhuma resposta encontrada</p>
               ) : (
                 filteredQR.map((qr, i) => (
-                  <button
+                  <div
                     key={qr.id}
-                    onClick={() => selectQuickReply(qr)}
-                    className={`w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-[#2a3942] transition ${i === qrSelected ? 'bg-[#2a3942]' : ''}`}
+                    className={`flex items-center gap-2 hover:bg-[#2a3942] transition ${i === qrSelected ? 'bg-[#2a3942]' : ''}`}
                   >
-                    <span className="text-[#00a884] font-mono text-xs bg-[#0b141a] px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">
-                      /{qr.shortcut}
-                    </span>
-                    <span className="text-[#e9edef] text-sm truncate leading-relaxed">
-                      {qr.content.length > 80 ? qr.content.slice(0, 80) + '…' : qr.content}
-                    </span>
-                  </button>
+                    <button
+                      onClick={() => qr.type === 'audio' ? sendQuickReply(qr) : selectQuickReply(qr)}
+                      className="flex-1 text-left px-4 py-2.5 flex items-center gap-3 min-w-0"
+                    >
+                      <span className="text-[#00a884] font-mono text-xs bg-[#0b141a] px-1.5 py-0.5 rounded flex-shrink-0 flex items-center gap-1">
+                        {qr.type === 'audio' && (
+                          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zm-1 13.93V19H9v2h6v-2h-2v-2.07A7.001 7.001 0 0019 12h-2a5 5 0 01-10 0H5a7.001 7.001 0 006 6.93z"/>
+                          </svg>
+                        )}
+                        /{qr.shortcut}
+                      </span>
+                      <span className="text-[#e9edef] text-sm truncate leading-relaxed">
+                        {qr.type === 'audio' ? '🎤 Mensagem de áudio' : (qr.content.length > 60 ? qr.content.slice(0, 60) + '…' : qr.content)}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => sendQuickReply(qr)}
+                      title="Enviar agora"
+                      className="mr-3 w-7 h-7 rounded-full bg-[#00a884] hover:bg-[#06cf9c] text-white flex items-center justify-center transition flex-shrink-0"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                      </svg>
+                    </button>
+                  </div>
                 ))
               )}
             </div>
@@ -1709,6 +2053,15 @@ export function ChatPanel({
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </button>
+                <button
+                  onClick={() => { setShowQRManager(true); if (quickReplies.length === 0) loadQuickReplies() }}
+                  title="Respostas rápidas"
+                  className={`p-1 rounded transition flex-shrink-0 ${showQRManager ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
                   </svg>
                 </button>
               </div>
