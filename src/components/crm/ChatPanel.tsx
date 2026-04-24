@@ -14,6 +14,7 @@ type Message = {
   participant_jid?: string | null
   is_internal?: boolean
   media_url?: string | null
+  media_data?: unknown | null
   reactions?: Record<string, string> | null
 }
 
@@ -110,12 +111,10 @@ function highlightText(text: string, query: string) {
 function VideoPlayer({
   thumbnail,
   messageId,
-  remoteJid,
   instance,
 }: {
   thumbnail: string
   messageId: string
-  remoteJid: string
   instance: string
 }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null)
@@ -127,7 +126,7 @@ function VideoPlayer({
     setLoading(true)
     setError(false)
     try {
-      const params = new URLSearchParams({ instance, remote_jid: remoteJid, message_id: messageId })
+      const params = new URLSearchParams({ instance, message_id: messageId })
       const res = await fetch(`/api/whatsapp/media-video?${params}`)
       if (!res.ok) { setError(true); return }
       const blob = await res.blob()
@@ -405,7 +404,7 @@ export function ChatPanel({
           const sb2 = createBrowserClient()
           const { data } = await sb2
             .from('whatsapp_messages')
-            .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions')
+            .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions')
             .eq('contact_id', contact.id)
             .order('timestamp', { ascending: true })
             .limit(100)
@@ -476,7 +475,7 @@ export function ChatPanel({
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('whatsapp_messages')
-        .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions')
+        .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions')
         .eq('contact_id', contact.id)
         .order('timestamp', { ascending: true })
         .limit(100)
@@ -1239,7 +1238,6 @@ export function ChatPanel({
                         <VideoPlayer
                           thumbnail={msg.media_url}
                           messageId={msg.message_id}
-                          remoteJid={contact.remote_jid || contact.phone}
                           instance={contact.instance_name}
                         />
                       ) : (

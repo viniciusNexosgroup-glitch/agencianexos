@@ -203,30 +203,22 @@ export async function processWebhookEvent(body: any) {
         } catch { /* falha silenciosa */ }
       }
 
-      // Vídeo: tenta baixar o vídeo completo; se muito grande, usa thumbnail do webhook
+      // Vídeo: salva thumbnail + dados completos do vídeo (mediaKey, url, etc.) para download sob demanda
       if (!error && msgType === 'videoMessage') {
-        try {
-          let mediaUrl: string | null = null
-          const mediaInfo = await getMediaBase64(instance, msg)
-          if (mediaInfo?.base64 && mediaInfo.base64.length < 8_000_000) {
-            const mime = mediaInfo.mimetype.split(';')[0].trim()
-            mediaUrl = `data:${mime};base64,${mediaInfo.base64}`
-          } else {
-            const thumb = innerMsg.videoMessage?.jpegThumbnail
-            if (thumb) mediaUrl = `data:image/jpeg;base64,${thumb}`
+        const videoMsg = innerMsg.videoMessage
+        if (videoMsg) {
+          const updates: Record<string, unknown> = {}
+          // Thumbnail para preview
+          if (videoMsg.jpegThumbnail) {
+            updates.media_url = `data:image/jpeg;base64,${videoMsg.jpegThumbnail}`
           }
-          if (mediaUrl) {
-            await db.from('whatsapp_messages')
-              .update({ media_url: mediaUrl })
-              .eq('message_id', msg.key.id)
+          // Salva dados completos do vídeo (necessário para descriptografar depois)
+          const { jpegThumbnail: _t, ...videoData } = videoMsg
+          updates.media_data = {
+            key: { remoteJid, fromMe, id: msg.key.id, participant: msg.key.participant || null },
+            message: { videoMessage: videoData },
           }
-        } catch {
-          const thumb = innerMsg.videoMessage?.jpegThumbnail
-          if (thumb) {
-            await db.from('whatsapp_messages')
-              .update({ media_url: `data:image/jpeg;base64,${thumb}` })
-              .eq('message_id', msg.key.id)
-          }
+          await db.from('whatsapp_messages').update(updates).eq('message_id', msg.key.id)
         }
       }
 

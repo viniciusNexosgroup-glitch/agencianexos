@@ -1,31 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
-import { findMessageById, getMediaBase64 } from '@/lib/evolution'
+import { getMediaBase64 } from '@/lib/evolution'
 
 export const dynamic = 'force-dynamic'
+
+function supabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
 
 export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const instance = req.nextUrl.searchParams.get('instance')
-  const remoteJid = req.nextUrl.searchParams.get('remote_jid')
   const messageId = req.nextUrl.searchParams.get('message_id')
+  const instance  = req.nextUrl.searchParams.get('instance')
 
-  if (!instance || !remoteJid || !messageId) {
+  if (!messageId || !instance) {
     return NextResponse.json({ error: 'Parâmetros inválidos' }, { status: 400 })
   }
 
-  // Busca a mensagem completa na Evolution API (com mediaKey para descriptografar)
-  const fullMessage = await findMessageById(instance, remoteJid, messageId)
-  if (!fullMessage) {
-    return NextResponse.json({ error: 'Mensagem não encontrada' }, { status: 404 })
+  // Busca os dados completos do vídeo salvos no banco
+  const db = supabase()
+  const { data: msg } = await db
+    .from('whatsapp_messages')
+    .select('media_data')
+    .eq('message_id', messageId)
+    .maybeSingle()
+
+  if (!msg?.media_data) {
+    return NextResponse.json({ error: 'Dados do vídeo não encontrados. Reenvie o vídeo para atualizá-lo.' }, { status: 404 })
   }
 
-  // Baixa o vídeo como base64
-  const media = await getMediaBase64(instance, fullMessage)
+  // Usa os dados salvos para baixar o vídeo da Evolution API
+  const media = await getMediaBase64(instance, msg.media_data)
   if (!media?.base64) {
-    return NextResponse.json({ error: 'Não foi possível baixar o vídeo' }, { status: 404 })
+    return NextResponse.json({ error: 'Não foi possível baixar o vídeo' }, { status: 502 })
   }
 
   const mime = media.mimetype.split(';')[0].trim()
