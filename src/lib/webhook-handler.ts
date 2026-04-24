@@ -40,6 +40,24 @@ export async function processWebhookEvent(body: any) {
     }
   }
 
+  // ── CONTACTS UPDATE (foto de perfil) ──────────────────────
+  if (event === 'CONTACTS_UPDATE') {
+    const list = Array.isArray(body.data) ? body.data : [body.data]
+    await Promise.all(
+      list.map(async (c: any) => {
+        const jid: string = c?.remoteJid || ''
+        const pic: string | null = c?.profilePicUrl || null
+        if (!jid || !instance || !pic) return
+        const phone = jid.endsWith('@g.us') ? jid : jid.replace('@s.whatsapp.net', '').replace('@lid', '')
+        if (!phone) return
+        await db.from('whatsapp_contacts')
+          .update({ profile_pic_url: pic })
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+      })
+    )
+  }
+
   // ── GROUPS ─────────────────────────────────────────────────
   if (event === 'GROUPS_UPSERT' || event === 'GROUPS_UPDATE') {
     const groups = Array.isArray(body.data) ? body.data : [body.data]
