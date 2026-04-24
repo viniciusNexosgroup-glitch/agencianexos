@@ -421,10 +421,12 @@ function ChatPanelWithTags({
   contact,
   onClose,
   funnels,
+  onOpenContact,
 }: {
   contact: Contact
   onClose: () => void
   funnels: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
+  onOpenContact?: (phone: string, instanceName: string) => void
 }) {
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
 
@@ -459,7 +461,7 @@ function ChatPanelWithTags({
           )}
         </div>
       </div>
-      <ChatPanel contact={contact} onClose={onClose} funnels={funnels} />
+      <ChatPanel contact={contact} onClose={onClose} funnels={funnels} onOpenContact={onOpenContact} />
     </div>
   )
 }
@@ -703,6 +705,21 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     }).catch(() => {})
   }
 
+  async function handleOpenContact(phone: string, instanceName: string) {
+    // Busca primeiro nos contatos já carregados
+    const existing = contacts.find(c => c.phone === phone && c.instance_name === instanceName)
+    if (existing) { handleSelectContact(existing); return }
+    // Se não encontrado, busca no banco
+    const sb = createBrowserClient()
+    const { data } = await sb
+      .from('whatsapp_contacts')
+      .select('id, name, phone, instance_name, last_message_at, remote_jid, unread_count, profile_pic_url')
+      .eq('instance_name', instanceName)
+      .eq('phone', phone)
+      .maybeSingle()
+    if (data) handleSelectContact(data as Contact)
+  }
+
   return (
     <>
       <div className="flex h-[calc(100vh-160px)] rounded-xl overflow-hidden border border-[#222e35]">
@@ -922,6 +939,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               contact={chatContact}
               onClose={() => { chatContactRef.current = null; setChatContact(null) }}
               funnels={funnels}
+              onOpenContact={handleOpenContact}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-8">

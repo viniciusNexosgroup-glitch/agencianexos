@@ -196,10 +196,12 @@ export function ChatPanel({
   contact,
   onClose,
   funnels,
+  onOpenContact,
 }: {
   contact: Contact
   onClose: () => void
   funnels?: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
+  onOpenContact?: (phone: string, instanceName: string) => void
 }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [text, setText] = useState('')
@@ -244,6 +246,16 @@ export function ChatPanel({
   const [transferNote, setTransferNote] = useState('')
   const [transferring, setTransferring] = useState(false)
   const [currentAgent, setCurrentAgent] = useState<Agent | null>(null)
+
+  // Perfil do participante (grupos)
+  type ParticipantProfile = {
+    name: string
+    phone: string
+    jid: string
+    loading: boolean
+    contact: { id: string; name: string; phone: string; instance_name: string; profile_pic_url?: string | null; remote_jid?: string | null } | null
+  }
+  const [profilePanel, setProfilePanel] = useState<ParticipantProfile | null>(null)
 
   // Mensagens interativas
   const [showInteractive, setShowInteractive] = useState(false)
@@ -657,6 +669,23 @@ export function ChatPanel({
     }, 0)
   }
 
+  async function openParticipantProfile(name: string, jid: string) {
+    const phone = jid.replace('@s.whatsapp.net', '').replace('@lid', '')
+    setProfilePanel({ name, phone, jid, contact: null, loading: true })
+    try {
+      const sb = createBrowserClient()
+      const { data } = await sb
+        .from('whatsapp_contacts')
+        .select('id, name, phone, instance_name, profile_pic_url, remote_jid')
+        .eq('instance_name', contact.instance_name)
+        .eq('phone', phone)
+        .maybeSingle()
+      setProfilePanel(prev => prev ? { ...prev, contact: data ?? null, loading: false } : null)
+    } catch {
+      setProfilePanel(prev => prev ? { ...prev, loading: false } : null)
+    }
+  }
+
   const searchTerm = text.startsWith('/') ? text.slice(1).toLowerCase() : ''
   const filteredQR = searchTerm
     ? quickReplies.filter(q =>
@@ -673,7 +702,85 @@ export function ChatPanel({
   const isGroup = contact.remote_jid?.endsWith('@g.us') || contact.phone?.includes('@g.us')
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+
+      {/* ── Painel de perfil do participante ── */}
+      {profilePanel && (
+        <div className="absolute inset-0 bg-[#0b141a] z-30 flex flex-col">
+          {/* Header */}
+          <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33] flex-shrink-0">
+            <button
+              onClick={() => setProfilePanel(null)}
+              className="text-[#8696a0] hover:text-white transition p-1"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h2 className="text-white font-medium text-sm">Dados do contato</h2>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {/* Foto e nome */}
+            <div className="bg-[#111b21] flex flex-col items-center py-10 gap-4">
+              {profilePanel.contact?.profile_pic_url ? (
+                <img
+                  src={profilePanel.contact.profile_pic_url}
+                  alt={profilePanel.name}
+                  className="w-32 h-32 rounded-full object-cover shadow-lg"
+                />
+              ) : (
+                <div className={`w-32 h-32 rounded-full flex items-center justify-center text-white text-4xl font-semibold shadow-lg ${avatarColor(profilePanel.name)}`}>
+                  {getInitials(profilePanel.name)}
+                </div>
+              )}
+              <div className="text-center px-6">
+                <p className="text-white text-xl font-light">{profilePanel.contact?.name || profilePanel.name}</p>
+                <p className="text-[#8696a0] text-sm mt-1">+{profilePanel.phone}</p>
+              </div>
+            </div>
+
+            {/* Botão Conversar */}
+            {onOpenContact && (
+              <div className="flex justify-center gap-8 py-6 border-b border-[#2a3942]">
+                <button
+                  onClick={() => {
+                    onOpenContact(profilePanel.phone, contact.instance_name)
+                    setProfilePanel(null)
+                  }}
+                  disabled={profilePanel.loading || !profilePanel.contact}
+                  className="flex flex-col items-center gap-2 text-[#00a884] hover:text-[#06cf9c] disabled:opacity-40 transition"
+                >
+                  <div className="w-12 h-12 rounded-full bg-[#202c33] flex items-center justify-center">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs">Conversar</span>
+                </button>
+              </div>
+            )}
+
+            {/* Telefone */}
+            <div className="px-6 py-5 border-b border-[#2a3942]">
+              <p className="text-[#8696a0] text-xs mb-1">Telefone</p>
+              <p className="text-[#e9edef] text-sm">+{profilePanel.phone}</p>
+            </div>
+
+            {profilePanel.loading && (
+              <div className="flex justify-center py-6">
+                <p className="text-[#8696a0] text-xs">Buscando informações...</p>
+              </div>
+            )}
+            {!profilePanel.loading && !profilePanel.contact && (
+              <div className="px-6 py-5">
+                <p className="text-[#8696a0] text-xs italic">Contato não encontrado no CRM</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-2 bg-[#202c33] flex-shrink-0">
         <button
@@ -894,9 +1001,14 @@ export function ChatPanel({
                       </span>
                     )}
                     {showSender && (
-                      <p className="text-xs font-semibold mb-1" style={{ color }}>
+                      <button
+                        type="button"
+                        onClick={() => openParticipantProfile(senderName, msg.participant_jid || '')}
+                        className="text-xs font-semibold mb-1 hover:underline text-left block"
+                        style={{ color }}
+                      >
                         {senderName}
-                      </p>
+                      </button>
                     )}
                     {/* Imagem */}
                     {(msg.message_type === 'imageMessage' || msg.message_type === 'stickerMessage') && (
