@@ -12,6 +12,7 @@ type Contact = {
   phone: string
   instance_name: string
   last_message_at: string | null
+  last_message_body?: string | null
   remote_jid: string | null
   unread_count: number
   profile_pic_url?: string | null
@@ -512,7 +513,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   async function fetchContacts() {
     const { data } = await createBrowserClient()
       .from('whatsapp_contacts')
-      .select('id, name, phone, instance_name, last_message_at, remote_jid, unread_count, profile_pic_url')
+      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url')
       .not('phone', 'like', '%@lid')
       .not('phone', 'eq', 'status@broadcast')
       .order('last_message_at', { ascending: false })
@@ -711,7 +712,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     const sb = createBrowserClient()
     const { data } = await sb
       .from('whatsapp_contacts')
-      .select('id, name, phone, instance_name, last_message_at, remote_jid, unread_count, profile_pic_url')
+      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url')
       .eq('instance_name', instanceName)
       .eq('phone', phone)
       .maybeSingle()
@@ -904,10 +905,9 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
                     </div>
                     <div className="flex items-center justify-between mt-0.5">
                       <div className="flex items-center gap-1 flex-1 min-w-0">
-                        {isGroup(contact)
-                          ? <span className="text-[#8696a0] text-xs truncate">Grupo</span>
-                          : <span className="text-[#8696a0] text-xs truncate">{contact.phone}</span>
-                        }
+                        <span className="text-[#8696a0] text-xs truncate">
+                          {contact.last_message_body || (isGroup(contact) ? 'Grupo' : contact.phone)}
+                        </span>
                       </div>
                       {unread > 0 && (
                         <span className="ml-1 flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-[#00a884] text-white text-[11px] font-bold flex items-center justify-center leading-none">
