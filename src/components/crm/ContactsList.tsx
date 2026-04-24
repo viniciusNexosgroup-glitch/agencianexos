@@ -529,7 +529,6 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
       currentId && c.id === currentId ? { ...c, unread_count: 0 } : c
     )
     merged.sort((a, b) => {
-      if (b.unread_count !== a.unread_count) return b.unread_count - a.unread_count
       const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
       const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
       return tb - ta
@@ -588,7 +587,6 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               ? prev.map(c => c.id === updated.id ? newContact : c)
               : [newContact, ...prev]
             return [...next].sort((a, b) => {
-              if (b.unread_count !== a.unread_count) return b.unread_count - a.unread_count
               const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
               const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
               return tb - ta
