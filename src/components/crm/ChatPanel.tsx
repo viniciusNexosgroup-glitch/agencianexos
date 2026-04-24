@@ -707,22 +707,46 @@ export function ChatPanel({
         const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || 'audio/webm' })
         const reader = new FileReader()
         reader.onloadend = async () => {
-          const base64 = (reader.result as string).split(',')[1]
+          const dataUrl = reader.result as string
+          const base64 = dataUrl.split(',')[1]
+
+          // Mensagem otimista: aparece imediatamente no chat
+          const optimistic: Message = {
+            id: crypto.randomUUID(),
+            from_me: true,
+            body: '',
+            timestamp: new Date().toISOString(),
+            message_type: 'audioMessage',
+            media_url: dataUrl,
+            is_internal: false,
+          }
+          setMessages(prev => [...prev, optimistic])
+
           setSendingAudio(true)
           try {
-            await fetch('/api/whatsapp/send-audio', {
+            const res = await fetch('/api/whatsapp/send-audio', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 instanceName: contact.instance_name,
-                contactId: contact.id,
                 phone: contact.remote_jid || contact.phone,
                 audio: base64,
               }),
             })
-            setTimeout(load, 1500)
-          } catch { setError('Erro ao enviar áudio.') }
-          finally { setSendingAudio(false) }
+            const data = await res.json()
+            if (data.error) {
+              setError('Erro ao enviar áudio: ' + data.error)
+              setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+            } else {
+              // Recarrega após 3s para substituir otimista pelo registro real do DB
+              setTimeout(load, 3000)
+            }
+          } catch {
+            setError('Erro de conexão ao enviar áudio.')
+            setMessages(prev => prev.filter(m => m.id !== optimistic.id))
+          } finally {
+            setSendingAudio(false)
+          }
         }
         reader.readAsDataURL(blob)
       }
