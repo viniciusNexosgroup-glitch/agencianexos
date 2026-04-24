@@ -5,6 +5,7 @@ import { createBrowserClient } from '@/lib/supabase-browser'
 
 type Message = {
   id: string
+  message_id?: string | null
   from_me: boolean
   body: string
   timestamp: string
@@ -103,6 +104,74 @@ function highlightText(text: string, query: string) {
           : part
       )}
     </>
+  )
+}
+
+function VideoPlayer({
+  thumbnail,
+  messageId,
+  remoteJid,
+  instance,
+}: {
+  thumbnail: string
+  messageId: string
+  remoteJid: string
+  instance: string
+}) {
+  const [videoSrc, setVideoSrc] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+
+  async function fetchVideo() {
+    if (videoSrc || loading) return
+    setLoading(true)
+    setError(false)
+    try {
+      const params = new URLSearchParams({ instance, remote_jid: remoteJid, message_id: messageId })
+      const res = await fetch(`/api/whatsapp/media-video?${params}`)
+      if (!res.ok) { setError(true); return }
+      const blob = await res.blob()
+      setVideoSrc(URL.createObjectURL(blob))
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (videoSrc) {
+    return (
+      <video
+        controls
+        autoPlay
+        className="rounded-lg max-w-[260px] max-h-[220px] mb-1"
+        style={{ background: '#000' }}
+        src={videoSrc}
+      />
+    )
+  }
+
+  return (
+    <div
+      className="relative rounded-lg overflow-hidden cursor-pointer mb-1"
+      style={{ maxWidth: 260, maxHeight: 180 }}
+      onClick={fetchVideo}
+    >
+      <img src={thumbnail} alt="Vídeo" className="w-full h-full object-cover" />
+      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+        {loading ? (
+          <div className="w-10 h-10 rounded-full border-2 border-white border-t-transparent animate-spin" />
+        ) : error ? (
+          <span className="text-white text-xs px-2 text-center">Não foi possível carregar</span>
+        ) : (
+          <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
+            <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -336,7 +405,7 @@ export function ChatPanel({
           const sb2 = createBrowserClient()
           const { data } = await sb2
             .from('whatsapp_messages')
-            .select('id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions')
+            .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions')
             .eq('contact_id', contact.id)
             .order('timestamp', { ascending: true })
             .limit(100)
@@ -407,7 +476,7 @@ export function ChatPanel({
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('whatsapp_messages')
-        .select('id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions')
+        .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions')
         .eq('contact_id', contact.id)
         .order('timestamp', { ascending: true })
         .limit(100)
@@ -1163,28 +1232,16 @@ export function ChatPanel({
                     {/* Vídeo */}
                     {msg.message_type === 'videoMessage' && (
                       msg.media_url?.startsWith('data:video/') ? (
-                        <video
-                          controls
-                          className="rounded-lg max-w-[260px] max-h-[200px] mb-1"
-                          style={{ background: '#000' }}
-                        >
+                        <video controls className="rounded-lg max-w-[260px] max-h-[220px] mb-1" style={{ background: '#000' }}>
                           <source src={msg.media_url} />
                         </video>
-                      ) : msg.media_url?.startsWith('data:image/') ? (
-                        <div
-                          className="relative rounded-lg overflow-hidden cursor-pointer mb-1"
-                          style={{ maxWidth: 260, maxHeight: 180 }}
-                          onClick={() => setLightboxSrc(msg.media_url!)}
-                        >
-                          <img src={msg.media_url} alt="Vídeo" className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
-                              <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z"/>
-                              </svg>
-                            </div>
-                          </div>
-                        </div>
+                      ) : msg.media_url?.startsWith('data:image/') && msg.message_id ? (
+                        <VideoPlayer
+                          thumbnail={msg.media_url}
+                          messageId={msg.message_id}
+                          remoteJid={contact.remote_jid || contact.phone}
+                          instance={contact.instance_name}
+                        />
                       ) : (
                         <span className="italic text-[#8696a0] text-xs">🎥 Vídeo</span>
                       )

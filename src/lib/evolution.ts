@@ -116,6 +116,21 @@ export async function sendWhatsAppAudio(instanceName: string, to: string, audioB
   return res.json()
 }
 
+export async function findMessageById(instanceName: string, remoteJid: string, messageId: string): Promise<unknown | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ where: { key: { id: messageId, remoteJid } }, limit: 1 }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return Array.isArray(data) ? (data[0] ?? null) : null
+  } catch {
+    return null
+  }
+}
+
 export async function getMediaBase64(
   instanceName: string,
   message: unknown
