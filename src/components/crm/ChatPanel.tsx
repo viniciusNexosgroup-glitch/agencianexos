@@ -247,6 +247,21 @@ export function ChatPanel({
   const [transferring, setTransferring] = useState(false)
   const [currentAgent, setCurrentAgent] = useState<Agent | null>(null)
 
+  // Lightbox
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+
+  // Emoji picker
+  const [showEmoji, setShowEmoji] = useState(false)
+  const emojiPickerRef = useRef<HTMLDivElement>(null)
+
+  // Gravação de áudio
+  const [recording, setRecording] = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [sendingAudio, setSendingAudio] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // Perfil do participante (grupos)
   type ParticipantProfile = {
     name: string
@@ -375,6 +390,17 @@ export function ChatPanel({
     }
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showQuickReplies])
+
+  // Fechar emoji picker ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setShowEmoji(false)
+      }
+    }
+    if (showEmoji) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showEmoji])
 
   async function load() {
     try {
@@ -669,6 +695,64 @@ export function ChatPanel({
     }, 0)
   }
 
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream)
+      mediaRecorderRef.current = mr
+      audioChunksRef.current = []
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || 'audio/webm' })
+        const reader = new FileReader()
+        reader.onloadend = async () => {
+          const base64 = (reader.result as string).split(',')[1]
+          setSendingAudio(true)
+          try {
+            await fetch('/api/whatsapp/send-audio', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                instanceName: contact.instance_name,
+                contactId: contact.id,
+                phone: contact.remote_jid || contact.phone,
+                audio: base64,
+              }),
+            })
+            setTimeout(load, 1500)
+          } catch { setError('Erro ao enviar áudio.') }
+          finally { setSendingAudio(false) }
+        }
+        reader.readAsDataURL(blob)
+      }
+      mr.start()
+      setRecording(true)
+      setRecordingSeconds(0)
+      recordingTimerRef.current = setInterval(() => setRecordingSeconds(s => s + 1), 1000)
+    } catch {
+      setError('Permissão de microfone necessária.')
+    }
+  }
+
+  function stopRecording() {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
+    mediaRecorderRef.current?.stop()
+    setRecording(false)
+    setRecordingSeconds(0)
+  }
+
+  function cancelRecording() {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current)
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.ondataavailable = null
+      mediaRecorderRef.current.onstop = null
+      mediaRecorderRef.current.stop()
+    }
+    setRecording(false)
+    setRecordingSeconds(0)
+  }
+
   async function openParticipantProfile(name: string, jid: string) {
     const phone = jid.replace('@s.whatsapp.net', '').replace('@lid', '')
     setProfilePanel({ name, phone, jid, contact: null, loading: true })
@@ -778,6 +862,29 @@ export function ChatPanel({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Lightbox ── */}
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white p-2"
+            onClick={() => setLightboxSrc(null)}
+          >
+            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+          <img
+            src={lightboxSrc}
+            alt="Imagem"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
         </div>
       )}
 
@@ -1017,7 +1124,7 @@ export function ChatPanel({
                             src={msg.media_url}
                             alt="Imagem"
                             className="rounded-lg max-w-[260px] max-h-[260px] object-cover cursor-pointer mb-1"
-                            onClick={() => window.open(msg.media_url!, '_blank')}
+                            onClick={() => setLightboxSrc(msg.media_url!)}
                           />
                         : <span className="italic text-[#8696a0] text-xs">📷 Imagem</span>
                     )}
@@ -1031,7 +1138,32 @@ export function ChatPanel({
 
                     {/* Vídeo */}
                     {msg.message_type === 'videoMessage' && (
-                      <span className="italic text-[#8696a0] text-xs">🎥 Vídeo</span>
+                      msg.media_url?.startsWith('data:video/') ? (
+                        <video
+                          controls
+                          className="rounded-lg max-w-[260px] max-h-[200px] mb-1"
+                          style={{ background: '#000' }}
+                        >
+                          <source src={msg.media_url} />
+                        </video>
+                      ) : msg.media_url?.startsWith('data:image/') ? (
+                        <div
+                          className="relative rounded-lg overflow-hidden cursor-pointer mb-1"
+                          style={{ maxWidth: 260, maxHeight: 180 }}
+                          onClick={() => setLightboxSrc(msg.media_url!)}
+                        >
+                          <img src={msg.media_url} alt="Vídeo" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
+                              <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="italic text-[#8696a0] text-xs">🎥 Vídeo</span>
+                      )
                     )}
 
                     {/* Documento */}
@@ -1263,6 +1395,34 @@ export function ChatPanel({
 
       {/* Input area */}
       <div className="flex-shrink-0 relative">
+        {/* Emoji picker */}
+        {showEmoji && (
+          <div
+            ref={emojiPickerRef}
+            className="absolute bottom-full left-4 mb-1 w-72 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl z-50 p-3"
+          >
+            <div className="grid grid-cols-8 gap-1 max-h-52 overflow-y-auto">
+              {[
+                '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','😉','😌','😍','🥰','😘',
+                '😋','😛','😜','🤪','😎','🤩','🥳','😏','😒','😔','😢','😭','😤','😠','😡','🤬',
+                '🤯','😳','😱','😨','🥺','😓','🤗','🤔','😶','😐','🙄','😮','🥱','😴','🤐','🤧',
+                '👍','👎','👏','🙌','🤝','✊','🤞','✌️','🤙','💪','🙏','👋','🫶','👌','🤟','🤘',
+                '❤️','🧡','💛','💚','💙','💜','🖤','🤍','💔','💕','💞','💓','💗','💖','💘','💝',
+                '🔥','✅','🎉','🚀','👀','💯','⚡','🌟','💥','🎯','💡','🔑','💎','🏆','🎁','🎊',
+                '😂','🥲','🫠','🤭','🫡','🤫','🫢','🥹','🫣','🤌','🫰','🫵','🫱','🫲','🤏','👆',
+              ].map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => { setText(t => t + emoji); setShowEmoji(false) }}
+                  className="text-xl hover:bg-[#2a3942] rounded p-0.5 transition leading-none"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Dropdown quick replies */}
         {showQuickReplies && (
           <div
@@ -1305,66 +1465,117 @@ export function ChatPanel({
           </div>
         )}
 
-        <div className={`flex items-end gap-2 px-4 py-3 bg-[#202c33] ${isInternal ? 'border-t-2 border-yellow-600' : ''}`}>
-          {/* Botão nota interna */}
-          <button
-            onClick={() => setIsInternal(v => !v)}
-            title={isInternal ? 'Modo nota interna (clique para desativar)' : 'Escrever nota interna'}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition flex-shrink-0 ${
-              isInternal ? 'bg-yellow-600 text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-
-          {/* Botão agendar */}
-          <button
-            onClick={() => setShowSchedule(v => !v)}
-            title="Agendar mensagem"
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition flex-shrink-0 ${
-              showSchedule ? 'bg-[#00a884] text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </button>
-
-          {/* Textarea */}
-          <div className={`flex-1 rounded-lg px-4 py-2 ${isInternal ? 'bg-[#2d3748] border border-yellow-700' : 'bg-[#2a3942]'}`}>
-            {isInternal && (
-              <p className="text-yellow-400 text-[10px] font-semibold uppercase tracking-wide mb-1">Nota interna</p>
-            )}
-            <textarea
-              ref={inputRef}
-              value={text}
-              onChange={handleTextChange}
-              onKeyDown={handleKeyDown}
-              placeholder={isInternal ? 'Escrever nota interna...' : 'Digite uma mensagem ou / para respostas rápidas'}
-              rows={1}
-              className="w-full bg-transparent text-[#e9edef] text-sm outline-none placeholder-[#8696a0] resize-none max-h-32 leading-relaxed"
-              style={{ height: 'auto' }}
-              onInput={e => {
-                const t = e.currentTarget
-                t.style.height = 'auto'
-                t.style.height = Math.min(t.scrollHeight, 128) + 'px'
-              }}
-            />
+        {/* Gravando áudio */}
+        {recording ? (
+          <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33]">
+            <button onClick={cancelRecording} className="w-9 h-9 rounded-full bg-[#2a3942] text-[#8696a0] hover:text-red-400 flex items-center justify-center transition flex-shrink-0">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+            <div className="flex-1 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0"/>
+              <span className="text-[#e9edef] text-sm">
+                {String(Math.floor(recordingSeconds / 60)).padStart(2,'0')}:{String(recordingSeconds % 60).padStart(2,'0')}
+              </span>
+              <span className="text-[#8696a0] text-xs">Gravando...</span>
+            </div>
+            <button
+              onClick={stopRecording}
+              disabled={sendingAudio}
+              className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#06cf9c] text-white flex items-center justify-center transition flex-shrink-0"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+              </svg>
+            </button>
           </div>
+        ) : (
+          <div className={`flex items-end gap-2 px-4 py-3 bg-[#202c33] ${isInternal ? 'border-t-2 border-yellow-600' : ''}`}>
+            {/* Botão nota interna */}
+            <button
+              onClick={() => setIsInternal(v => !v)}
+              title={isInternal ? 'Modo nota interna (clique para desativar)' : 'Escrever nota interna'}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition flex-shrink-0 ${
+                isInternal ? 'bg-yellow-600 text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
 
-          {/* Botão enviar */}
-          <button
-            onClick={send}
-            disabled={!text.trim() || sending}
-            className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#2a3942] disabled:text-[#8696a0] text-white flex items-center justify-center transition flex-shrink-0"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-            </svg>
-          </button>
-        </div>
+            {/* Botão agendar */}
+            <button
+              onClick={() => setShowSchedule(v => !v)}
+              title="Agendar mensagem"
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition flex-shrink-0 ${
+                showSchedule ? 'bg-[#00a884] text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+
+            {/* Textarea + emoji */}
+            <div className={`flex-1 rounded-lg px-3 py-2 ${isInternal ? 'bg-[#2d3748] border border-yellow-700' : 'bg-[#2a3942]'}`}>
+              {isInternal && (
+                <p className="text-yellow-400 text-[10px] font-semibold uppercase tracking-wide mb-1">Nota interna</p>
+              )}
+              <div className="flex items-end gap-1">
+                <textarea
+                  ref={inputRef}
+                  value={text}
+                  onChange={handleTextChange}
+                  onKeyDown={handleKeyDown}
+                  placeholder={isInternal ? 'Escrever nota interna...' : 'Digite uma mensagem ou / para respostas rápidas'}
+                  rows={1}
+                  className="flex-1 bg-transparent text-[#e9edef] text-sm outline-none placeholder-[#8696a0] resize-none max-h-32 leading-relaxed"
+                  style={{ height: 'auto' }}
+                  onInput={e => {
+                    const t = e.currentTarget
+                    t.style.height = 'auto'
+                    t.style.height = Math.min(t.scrollHeight, 128) + 'px'
+                  }}
+                />
+                <button
+                  onClick={() => setShowEmoji(v => !v)}
+                  title="Emojis"
+                  className={`p-1 rounded transition flex-shrink-0 ${showEmoji ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Botão enviar ou microfone */}
+            {text.trim() ? (
+              <button
+                onClick={send}
+                disabled={sending}
+                className="w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#06cf9c] disabled:bg-[#2a3942] disabled:text-[#8696a0] text-white flex items-center justify-center transition flex-shrink-0"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={startRecording}
+                disabled={sendingAudio || isInternal}
+                title="Gravar áudio"
+                className="w-10 h-10 rounded-full bg-[#2a3942] hover:bg-[#3d4f5a] disabled:opacity-40 text-[#8696a0] hover:text-white flex items-center justify-center transition flex-shrink-0"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

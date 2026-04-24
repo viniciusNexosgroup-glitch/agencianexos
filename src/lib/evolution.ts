@@ -107,6 +107,15 @@ export async function fetchGroupInfo(instanceName: string, groupJid: string): Pr
   }
 }
 
+export async function sendWhatsAppAudio(instanceName: string, to: string, audioBase64: string) {
+  const res = await fetch(`${BASE_URL}/message/sendWhatsAppAudio/${instanceName}`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ number: to, audio: audioBase64, encoding: true }),
+  })
+  return res.json()
+}
+
 export async function getMediaBase64(
   instanceName: string,
   message: unknown

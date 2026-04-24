@@ -189,20 +189,44 @@ export async function processWebhookEvent(body: any) {
         console.error('Erro ao processar mensagem via RPC:', error.message)
       }
 
-      // Baixar mídia (imagem, áudio, sticker) e armazenar como base64
+      // Baixar mídia e armazenar como base64
       const DOWNLOADABLE = ['imageMessage', 'audioMessage', 'stickerMessage', 'ptvMessage']
       if (!error && DOWNLOADABLE.includes(msgType)) {
         try {
           const mediaInfo = await getMediaBase64(instance, msg)
           if (mediaInfo?.base64) {
             const mime = mediaInfo.mimetype.split(';')[0].trim()
-            const dataUrl = `data:${mime};base64,${mediaInfo.base64}`
             await db.from('whatsapp_messages')
-              .update({ media_url: dataUrl })
+              .update({ media_url: `data:${mime};base64,${mediaInfo.base64}` })
+              .eq('message_id', msg.key.id)
+          }
+        } catch { /* falha silenciosa */ }
+      }
+
+      // Vídeo: tenta baixar o vídeo completo; se muito grande, usa thumbnail do webhook
+      if (!error && msgType === 'videoMessage') {
+        try {
+          let mediaUrl: string | null = null
+          const mediaInfo = await getMediaBase64(instance, msg)
+          if (mediaInfo?.base64 && mediaInfo.base64.length < 8_000_000) {
+            const mime = mediaInfo.mimetype.split(';')[0].trim()
+            mediaUrl = `data:${mime};base64,${mediaInfo.base64}`
+          } else {
+            const thumb = innerMsg.videoMessage?.jpegThumbnail
+            if (thumb) mediaUrl = `data:image/jpeg;base64,${thumb}`
+          }
+          if (mediaUrl) {
+            await db.from('whatsapp_messages')
+              .update({ media_url: mediaUrl })
               .eq('message_id', msg.key.id)
           }
         } catch {
-          // falha silenciosa: mensagem fica sem media_url
+          const thumb = innerMsg.videoMessage?.jpegThumbnail
+          if (thumb) {
+            await db.from('whatsapp_messages')
+              .update({ media_url: `data:image/jpeg;base64,${thumb}` })
+              .eq('message_id', msg.key.id)
+          }
         }
       }
 
