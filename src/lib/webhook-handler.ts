@@ -58,6 +58,28 @@ export async function processWebhookEvent(body: any) {
     )
   }
 
+  // ── CHATS UPDATE (leitura no WhatsApp → zera badge no CRM) ──
+  if (event === 'CHATS_UPDATE' || event === 'CHATS_UPSERT') {
+    const chats = Array.isArray(body.data) ? body.data : [body.data]
+    await Promise.all(
+      chats.map(async (chat: any) => {
+        const remoteJid: string = chat?.id || chat?.remoteJid || ''
+        // unreadCount === 0 significa que o usuário leu as mensagens no WhatsApp
+        const unread = chat?.unreadCount ?? chat?.unread_count ?? chat?.unread ?? -1
+        if (remoteJid && instance && unread === 0) {
+          const phone = remoteJid.endsWith('@g.us')
+            ? remoteJid
+            : remoteJid.replace('@s.whatsapp.net', '').replace('@lid', '')
+          await db.from('whatsapp_contacts')
+            .update({ unread_count: 0 })
+            .eq('instance_name', instance)
+            .eq('phone', phone)
+            .gt('unread_count', 0) // só atualiza se realmente havia não lidas
+        }
+      })
+    )
+  }
+
   // ── GROUPS ─────────────────────────────────────────────────
   if (event === 'GROUPS_UPSERT' || event === 'GROUPS_UPDATE') {
     const groups = Array.isArray(body.data) ? body.data : [body.data]

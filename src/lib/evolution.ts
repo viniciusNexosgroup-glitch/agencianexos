@@ -65,7 +65,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string) {
       enabled: true,
       webhookByEvents: false,
       webhookBase64: false,
-      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED', 'GROUPS_UPSERT', 'GROUPS_UPDATE'],
+      events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED', 'GROUPS_UPSERT', 'GROUPS_UPDATE', 'CHATS_UPDATE', 'CHATS_UPSERT'],
     }),
   })
   const data = await res.json()
@@ -105,6 +105,18 @@ export async function fetchGroupInfo(instanceName: string, groupJid: string): Pr
   } catch {
     return null
   }
+}
+
+export async function markChatAsRead(instanceName: string, remoteJid: string, lastMessageId: string, fromMe: boolean) {
+  try {
+    await fetch(`${BASE_URL}/chat/markMessageAsRead/${instanceName}`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({
+        readMessages: [{ remoteJid, fromMe, id: lastMessageId }],
+      }),
+    })
+  } catch { /* silencioso */ }
 }
 
 export async function sendWhatsAppAudio(instanceName: string, to: string, audioBase64: string) {
