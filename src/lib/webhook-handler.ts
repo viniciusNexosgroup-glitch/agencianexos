@@ -89,11 +89,16 @@ export async function processWebhookEvent(body: any) {
       const isGroup = remoteJid.endsWith('@g.us')
       const phone   = isGroup ? remoteJid : remoteJid.replace('@s.whatsapp.net', '')
       const fromMe  = msg.key.fromMe ?? false
-      const msgType = Object.keys(msg.message || {})[0] || 'text'
+
+      // Ignora chaves de metadados para encontrar o tipo real da mensagem
+      const META_KEYS = new Set(['messageContextInfo', 'deviceSentMessage', 'senderKeyDistributionMessage'])
+      // Desempacota mensagens aninhadas (deviceSentMessage, ephemeralMessage, etc.)
+      const innerMsg = msg.message?.deviceSentMessage?.message || msg.message || {}
+      const msgType = Object.keys(innerMsg).find(k => !META_KEYS.has(k)) || 'text'
 
       // Reação: atualiza a mensagem alvo e não insere nova mensagem
       if (msgType === 'reactionMessage') {
-        const reaction = msg.message.reactionMessage
+        const reaction = innerMsg.reactionMessage
         const targetMsgId = reaction?.key?.id
         const emoji = reaction?.text || ''
         if (targetMsgId) {
@@ -112,10 +117,10 @@ export async function processWebhookEvent(body: any) {
         continue
       }
 
-      const text    = msg.message?.conversation
-        || msg.message?.extendedTextMessage?.text
-        || msg.message?.imageMessage?.caption
-        || msg.message?.videoMessage?.caption
+      const text    = innerMsg.conversation
+        || innerMsg.extendedTextMessage?.text
+        || innerMsg.imageMessage?.caption
+        || innerMsg.videoMessage?.caption
         || ''
       const timestamp = msg.messageTimestamp
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
