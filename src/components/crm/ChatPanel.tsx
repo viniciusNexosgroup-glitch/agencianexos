@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createBrowserClient } from '@/lib/supabase-browser'
 
 type Message = {
@@ -103,6 +103,92 @@ function highlightText(text: string, query: string) {
           : part
       )}
     </>
+  )
+}
+
+function AudioPlayer({ src, fromMe }: { src: string; fromMe: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+
+  const bars = useMemo(() => {
+    let seed = 0
+    for (let i = 0; i < Math.min(src.length, 40); i++) seed += src.charCodeAt(i)
+    return Array.from({ length: 32 }, () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return 20 + (seed % 80)
+    })
+  }, [src])
+
+  function togglePlay() {
+    const audio = audioRef.current
+    if (!audio) return
+    if (playing) audio.pause()
+    else audio.play()
+  }
+
+  function formatDur(s: number) {
+    if (!s || !isFinite(s)) return '0:00'
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
+  const progress = duration > 0 ? currentTime / duration : 0
+  const playedBars = Math.floor(progress * bars.length)
+
+  return (
+    <div className="flex items-center gap-2.5" style={{ minWidth: '220px', maxWidth: '260px' }}>
+      <audio
+        ref={audioRef}
+        src={src}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCurrentTime(0) }}
+        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime ?? 0)}
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration ?? 0)}
+      />
+
+      <button
+        onClick={togglePlay}
+        className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-opacity hover:opacity-80"
+        style={{ backgroundColor: fromMe ? '#ffffff25' : '#00a88430' }}
+      >
+        {playing ? (
+          <svg className="w-4 h-4 text-[#00a884]" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+          </svg>
+        ) : (
+          <svg className="w-4 h-4 text-[#00a884]" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        )}
+      </button>
+
+      <div className="flex-1 flex flex-col gap-1.5">
+        <div className="flex items-center gap-[2px] h-7">
+          {bars.map((h, i) => (
+            <div
+              key={i}
+              className="rounded-full transition-colors duration-100"
+              style={{
+                flex: 1,
+                height: `${h}%`,
+                minWidth: '2px',
+                maxWidth: '4px',
+                backgroundColor: i < playedBars
+                  ? '#00a884'
+                  : fromMe ? '#ffffff55' : '#8696a0',
+              }}
+            />
+          ))}
+        </div>
+        <p className="text-[10px] text-[#8696a0] leading-none">
+          {formatDur(playing || currentTime > 0 ? currentTime : duration)}
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -827,9 +913,7 @@ export function ChatPanel({
                     {/* Áudio */}
                     {(msg.message_type === 'audioMessage' || msg.message_type === 'ptvMessage') && (
                       msg.media_url
-                        ? <audio controls className="w-full max-w-[260px] mb-1" style={{ height: '36px' }}>
-                            <source src={msg.media_url} />
-                          </audio>
+                        ? <AudioPlayer src={msg.media_url} fromMe={msg.from_me} />
                         : <span className="italic text-[#8696a0] text-xs">🎵 Áudio</span>
                     )}
 
