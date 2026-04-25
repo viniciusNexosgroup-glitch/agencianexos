@@ -73,6 +73,7 @@ export function FlowBuilder() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [showNewForm, setShowNewForm] = useState(false)
   const [newFlowName, setNewFlowName] = useState('')
   const [newFlowInstance, setNewFlowInstance] = useState('')
@@ -217,6 +218,19 @@ export function FlowBuilder() {
       setSaveError(err.message ?? 'Erro de rede ao salvar')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDelete(flow: Flow) {
+    if (!confirm(`Excluir o flow "${flow.name}"? Esta ação não pode ser desfeita.`)) return
+    setDeletingId(flow.id)
+    try {
+      const res = await fetch(`/api/whatsapp/flows/${flow.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setFlows(fs => fs.filter(f => f.id !== flow.id))
+      }
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -533,12 +547,21 @@ export function FlowBuilder() {
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => setEditingFlow(flow)}
-                        className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg transition"
-                      >
-                        Editar
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setEditingFlow(flow)}
+                          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg transition"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(flow)}
+                          disabled={deletingId === flow.id}
+                          className="px-3 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 hover:text-red-300 text-xs rounded-lg transition disabled:opacity-50"
+                        >
+                          {deletingId === flow.id ? '...' : 'Excluir'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

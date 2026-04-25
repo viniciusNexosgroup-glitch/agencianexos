@@ -44,7 +44,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { data: flow } = await db.from('flows').select('id').eq('id', id).single()
   if (!flow) return NextResponse.json({ error: 'Flow não encontrado' }, { status: 404 })
 
-  // Formato do FlowBuilder: salva steps + config diretamente na tabela flows
   const updates: Record<string, unknown> = {}
   if (body.name !== undefined) updates.name = body.name
   if (body.trigger_type !== undefined) updates.trigger_type = body.trigger_type
@@ -89,4 +88,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ flow: updated })
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  const { id } = params
+  const db = supabase()
+
+  const { error } = await db.from('flows').delete().eq('id', id)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ success: true })
 }
