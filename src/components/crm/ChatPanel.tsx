@@ -1606,9 +1606,14 @@ export function ChatPanel({
               </span>
             </div>
             {group.messages.map((msg, idx) => {
-              const senderName = msg.participant_name || ''
-              const showSender = isGroup && !msg.from_me && senderName &&
-                (idx === 0 || group.messages[idx - 1].participant_jid !== msg.participant_jid || group.messages[idx - 1].from_me)
+              const senderName = isGroup
+                ? (msg.participant_name || '')
+                : (!msg.from_me ? (contact.name || contact.phone) : '')
+              const showSender = !msg.from_me && senderName && (
+                isGroup
+                  ? (idx === 0 || group.messages[idx - 1].participant_jid !== msg.participant_jid || group.messages[idx - 1].from_me)
+                  : (idx === 0 || group.messages[idx - 1].from_me)
+              )
               const color = senderName ? senderColor(senderName) : '#8696a0'
               const isIntMsg = msg.is_internal
 
@@ -1633,7 +1638,16 @@ export function ChatPanel({
                     {showSender && (
                       <button
                         type="button"
-                        onClick={() => openParticipantProfile(senderName, msg.participant_jid || '')}
+                        onClick={() => {
+                          if (isGroup) {
+                            openParticipantProfile(senderName, msg.participant_jid || '')
+                          } else {
+                            openParticipantProfile(
+                              contact.name || contact.phone,
+                              contact.remote_jid || `${contact.phone}@s.whatsapp.net`
+                            )
+                          }
+                        }}
                         className="text-xs font-semibold mb-1 hover:underline text-left block"
                         style={{ color }}
                       >
