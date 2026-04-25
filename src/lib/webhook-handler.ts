@@ -263,6 +263,34 @@ export async function processWebhookEvent(body: any) {
         }
       }
 
+      // Contexto de resposta (reply/quoted message)
+      const contextInfo = innerMsg.extendedTextMessage?.contextInfo
+        || innerMsg.imageMessage?.contextInfo
+        || innerMsg.audioMessage?.contextInfo
+        || null
+      if (!error && contextInfo?.quotedMessage && contextInfo?.stanzaId) {
+        const qMsg = contextInfo.quotedMessage
+        const quotedBody = qMsg.conversation
+          || qMsg.extendedTextMessage?.text
+          || qMsg.imageMessage?.caption
+          || qMsg.videoMessage?.caption
+          || '[mídia]'
+        const senderPhone = contextInfo.participant?.replace('@s.whatsapp.net', '') || null
+        try {
+          const { data: existing } = await db.from('whatsapp_messages')
+            .select('media_data')
+            .eq('message_id', msg.key.id)
+            .maybeSingle()
+          const merged = { ...(existing?.media_data as Record<string, unknown> || {}), _reply: {
+            id: contextInfo.stanzaId,
+            body: quotedBody,
+            sender_name: senderPhone,
+            from_me: !contextInfo.participant,
+          }}
+          await db.from('whatsapp_messages').update({ media_data: merged }).eq('message_id', msg.key.id)
+        } catch { /* falha silenciosa */ }
+      }
+
       // Incrementa não lidas para mensagens recebidas; zera para enviadas por mim
       if (!fromMe) {
         await db.rpc('increment_unread_count', { p_instance_name: instance, p_phone: phone })

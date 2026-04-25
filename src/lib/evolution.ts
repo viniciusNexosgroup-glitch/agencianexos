@@ -141,6 +141,50 @@ export async function findMessageById(instanceName: string, remoteJid: string, m
   }
 }
 
+export async function sendReaction(
+  instanceName: string,
+  key: { remoteJid: string; fromMe: boolean; id: string },
+  emoji: string
+) {
+  const res = await fetch(`${BASE_URL}/message/sendReaction/${instanceName}`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ key, reaction: emoji }),
+  })
+  return res.json()
+}
+
+export async function deleteMessageForEveryone(
+  instanceName: string,
+  remoteJid: string,
+  messageId: string,
+  fromMe: boolean,
+  participant?: string
+) {
+  const body: Record<string, unknown> = { id: messageId, remoteJid, fromMe }
+  if (participant) body.participant = participant
+  const res = await fetch(`${BASE_URL}/chat/deleteMessageForEveryone/${instanceName}`, {
+    method: 'DELETE',
+    headers: headers(),
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}
+
+export async function sendTextWithQuote(
+  instanceName: string,
+  to: string,
+  text: string,
+  quoted: { key: { remoteJid: string; fromMe: boolean; id: string }; message: unknown }
+) {
+  const res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ number: to, text, quoted }),
+  })
+  return res.json()
+}
+
 export async function getMediaBase64(
   instanceName: string,
   message: unknown

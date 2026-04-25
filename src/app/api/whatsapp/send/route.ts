@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { instanceName, contactId, phone, text, is_internal } = await req.json()
+  const { instanceName, contactId, phone, text, is_internal, quoted } = await req.json()
 
   if (!instanceName || !phone || !text) {
     return NextResponse.json({ error: 'instanceName, phone e text são obrigatórios' }, { status: 400 })
@@ -61,9 +61,11 @@ export async function POST(req: NextRequest) {
   const number = isGroup ? phone : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
   async function doSend() {
+    const payload: Record<string, unknown> = { number, text }
+    if (quoted) payload.quoted = quoted
     return evFetch(`/message/sendText/${instanceName}`, {
       method: 'POST',
-      body: JSON.stringify({ number, text }),
+      body: JSON.stringify(payload),
     })
   }
 

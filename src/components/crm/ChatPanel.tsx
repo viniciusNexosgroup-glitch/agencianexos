@@ -562,9 +562,22 @@ export function ChatPanel({
   const qrAudioChunksRef = useRef<Blob[]>([])
   const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Ações de mensagem (reply, forward, react, delete)
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+  const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
+  const [reactionMsgId, setReactionMsgId] = useState<string | null>(null)
+  const [forwardMsg, setForwardMsg] = useState<Message | null>(null)
+  const [forwardSearch, setForwardSearch] = useState('')
+  const [forwardContacts, setForwardContacts] = useState<{ id: string; name: string; phone: string; instance_name: string; remote_jid?: string | null }[]>([])
+  const [forwardingTo, setForwardingTo] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Message | null>(null)
+  const [deletingMsg, setDeletingMsg] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
   // Fecha painel de perfil ao trocar de conversa
   useEffect(() => {
     setProfilePanel(null)
+    setReplyingTo(null)
   }, [contact.id])
 
   useEffect(() => {
@@ -688,6 +701,18 @@ export function ChatPanel({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showEmoji])
 
+  // Fechar menu de mensagem ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuMsgId(null)
+        setReactionMsgId(null)
+      }
+    }
+    if (menuMsgId || reactionMsgId) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuMsgId, reactionMsgId])
+
   async function load() {
     try {
       const supabase = createBrowserClient()
@@ -732,6 +757,91 @@ export function ChatPanel({
     const res = await fetch('/api/whatsapp/agents')
     const data = await res.json()
     setAgents(data.agents ?? [])
+  }
+
+  async function loadForwardContacts() {
+    try {
+      const res = await fetch('/api/whatsapp/contacts?limit=100')
+      const d = await res.json()
+      setForwardContacts(d.contacts ?? [])
+    } catch { setForwardContacts([]) }
+  }
+
+  async function handleReact(msg: Message, emoji: string) {
+    setReactionMsgId(null)
+    setMenuMsgId(null)
+    const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
+    // Optimistic: atualiza reactions localmente
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msg.id) return m
+      const reactions = { ...(m.reactions || {}), me: emoji }
+      return { ...m, reactions }
+    }))
+    await fetch('/api/whatsapp/react', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instance_name: contact.instance_name,
+        remote_jid: remoteJid,
+        message_id: msg.message_id,
+        from_me: msg.from_me,
+        emoji,
+      }),
+    })
+  }
+
+  async function handleDeleteForMe(msg: Message) {
+    setDeletingMsg(true)
+    setDeleteTarget(null)
+    setMessages(prev => prev.filter(m => m.id !== msg.id))
+    await fetch('/api/whatsapp/delete-message', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: msg.id, for_everyone: false }),
+    })
+    setDeletingMsg(false)
+  }
+
+  async function handleDeleteForAll(msg: Message) {
+    setDeletingMsg(true)
+    setDeleteTarget(null)
+    setMessages(prev => prev.filter(m => m.id !== msg.id))
+    const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
+    await fetch('/api/whatsapp/delete-message', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: msg.id,
+        message_id: msg.message_id,
+        instance_name: contact.instance_name,
+        remote_jid: remoteJid,
+        from_me: msg.from_me,
+        for_everyone: true,
+      }),
+    })
+    setDeletingMsg(false)
+  }
+
+  async function handleForward(targetContact: { id: string; name: string; phone: string; instance_name: string; remote_jid?: string | null }) {
+    if (!forwardMsg || forwardingTo) return
+    setForwardingTo(targetContact.id)
+    const to = targetContact.remote_jid || targetContact.phone
+    try {
+      await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceName: targetContact.instance_name,
+          contactId: targetContact.id,
+          phone: to,
+          text: forwardMsg.body || '[mídia]',
+        }),
+      })
+    } finally {
+      setForwardingTo(null)
+      setForwardMsg(null)
+      setForwardSearch('')
+    }
   }
 
   async function transfer() {
@@ -878,9 +988,11 @@ export function ChatPanel({
   async function send() {
     if (!text.trim() || sending) return
     const body = text.trim()
+    const quotedMsg = replyingTo
     setSending(true)
     setError(null)
     setText('')
+    setReplyingTo(null)
     isAtBottomRef.current = true
 
     const optimistic: Message = {
@@ -890,20 +1002,29 @@ export function ChatPanel({
       timestamp: new Date().toISOString(),
       message_type: 'text',
       is_internal: isInternal,
+      media_data: quotedMsg ? { _reply: { id: quotedMsg.message_id, body: quotedMsg.body, sender_name: quotedMsg.from_me ? 'Você' : (contact.name || contact.phone), from_me: quotedMsg.from_me } } : undefined,
     }
     setMessages(prev => [...prev, optimistic])
 
     try {
+      const remoteJid = contact.remote_jid || contact.phone
+      const payload: Record<string, unknown> = {
+        instanceName: contact.instance_name,
+        contactId: contact.id,
+        phone: remoteJid,
+        text: body,
+        is_internal: isInternal,
+      }
+      if (quotedMsg?.message_id) {
+        payload.quoted = {
+          key: { remoteJid, fromMe: quotedMsg.from_me, id: quotedMsg.message_id },
+          message: { conversation: quotedMsg.body || '' },
+        }
+      }
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instanceName: contact.instance_name,
-          contactId: contact.id,
-          phone: contact.remote_jid || contact.phone,
-          text: body,
-          is_internal: isInternal,
-        }),
+        body: JSON.stringify(payload),
       })
       const result = await res.json()
       if (result.error) {
@@ -1677,6 +1798,94 @@ export function ChatPanel({
         </div>
       )}
 
+      {/* ── Modal: Encaminhar mensagem ── */}
+      {forwardMsg && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={() => { setForwardMsg(null); setForwardSearch('') }}>
+          <div className="bg-[#202c33] rounded-2xl w-80 max-h-[70vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-[#2a3942]">
+              <button onClick={() => { setForwardMsg(null); setForwardSearch('') }} className="text-[#8696a0] hover:text-white transition">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
+              </button>
+              <div className="flex-1">
+                <p className="text-white text-sm font-medium">Encaminhar mensagem</p>
+                <p className="text-[#8696a0] text-xs truncate">{forwardMsg.body || '[mídia]'}</p>
+              </div>
+            </div>
+            <div className="px-3 py-2 border-b border-[#2a3942]">
+              <input
+                value={forwardSearch}
+                onChange={e => { setForwardSearch(e.target.value); if (forwardContacts.length === 0) loadForwardContacts() }}
+                onFocus={() => { if (forwardContacts.length === 0) loadForwardContacts() }}
+                placeholder="Buscar contato..."
+                className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none placeholder-[#8696a0]"
+                autoFocus
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {forwardContacts
+                .filter(c => !forwardSearch || c.name?.toLowerCase().includes(forwardSearch.toLowerCase()) || c.phone.includes(forwardSearch))
+                .slice(0, 30)
+                .map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => handleForward(c)}
+                    disabled={!!forwardingTo}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#2a3942] transition text-left"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-teal-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                      {(c.name || c.phone).slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#e9edef] text-sm truncate">{c.name || c.phone}</p>
+                      <p className="text-[#8696a0] text-xs">{c.instance_name}</p>
+                    </div>
+                    {forwardingTo === c.id && <span className="text-[#00a884] text-xs">Enviando...</span>}
+                  </button>
+                ))}
+              {forwardContacts.length === 0 && (
+                <p className="text-[#8696a0] text-xs text-center py-6">Carregando contatos...</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Confirmar exclusão ── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={() => setDeleteTarget(null)}>
+          <div className="bg-[#202c33] rounded-2xl p-5 shadow-2xl w-72" onClick={e => e.stopPropagation()}>
+            <p className="text-white font-medium mb-1">Apagar mensagem?</p>
+            <p className="text-[#8696a0] text-sm mb-4 leading-relaxed">
+              {deleteTarget.body ? `"${deleteTarget.body.slice(0, 60)}${deleteTarget.body.length > 60 ? '...' : ''}"` : '[mídia]'}
+            </p>
+            <div className="flex flex-col gap-2">
+              {deleteTarget.from_me && (
+                <button
+                  onClick={() => handleDeleteForAll(deleteTarget)}
+                  disabled={deletingMsg}
+                  className="w-full py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition"
+                >
+                  Apagar para todos
+                </button>
+              )}
+              <button
+                onClick={() => handleDeleteForMe(deleteTarget)}
+                disabled={deletingMsg}
+                className="w-full py-2.5 bg-[#2a3942] hover:bg-[#3d4a54] disabled:opacity-40 text-[#e9edef] text-sm font-medium rounded-xl transition"
+              >
+                Apagar para mim
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="w-full py-2 text-[#8696a0] text-sm hover:text-white transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Lightbox ── */}
       {lightboxSrc && (
         <div
@@ -1923,8 +2132,73 @@ export function ChatPanel({
               const color = senderName ? senderColor(senderName) : '#8696a0'
               const isIntMsg = msg.is_internal
 
+              const QUICK_EMOJIS = ['👍','❤️','😂','😮','😢','🙏']
+              const replyData = (msg.media_data as Record<string, unknown> | null)?._reply as { body?: string; sender_name?: string | null; from_me?: boolean } | undefined
+
               return (
-                <div key={msg.id} className={`flex mb-1 ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
+                <div key={msg.id} className={`flex mb-1 group/msg ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
+
+                  {/* Ações hover (lado esquerdo para fromMe, direito para recebidas) */}
+                  <div className={`flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity flex-shrink-0 self-end mb-1 ${msg.from_me ? 'order-first mr-1' : 'order-last ml-1'}`}>
+                    {/* Quick reactions */}
+                    {reactionMsgId === msg.id && (
+                      <div ref={menuRef} className={`absolute ${msg.from_me ? 'right-10' : 'left-10'} bottom-8 z-20 flex items-center gap-1 bg-[#233138] border border-[#2a3942] rounded-full px-2 py-1.5 shadow-xl`}>
+                        {QUICK_EMOJIS.map(e => (
+                          <button key={e} onClick={() => handleReact(msg, e)} className="text-lg hover:scale-125 transition-transform">
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setReactionMsgId(id => id === msg.id ? null : msg.id)}
+                      className="w-7 h-7 rounded-full bg-[#233138] hover:bg-[#2a3942] flex items-center justify-center text-[#8696a0] hover:text-white transition shadow"
+                      title="Reagir"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                      </svg>
+                    </button>
+                    {/* Chevron menu */}
+                    <div className="relative">
+                      <button
+                        onClick={() => { setMenuMsgId(id => id === msg.id ? null : msg.id); setReactionMsgId(null) }}
+                        className="w-7 h-7 rounded-full bg-[#233138] hover:bg-[#2a3942] flex items-center justify-center text-[#8696a0] hover:text-white transition shadow"
+                        title="Mais opções"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M7 10l5 5 5-5z"/>
+                        </svg>
+                      </button>
+                      {menuMsgId === msg.id && (
+                        <div ref={menuRef} className={`absolute ${msg.from_me ? 'right-0' : 'left-0'} bottom-8 z-20 bg-[#233138] border border-[#2a3942] rounded-xl shadow-xl py-1 min-w-[160px]`}>
+                          <button
+                            onClick={() => { setReplyingTo(msg); setMenuMsgId(null); inputRef.current?.focus() }}
+                            className="w-full text-left px-4 py-2.5 text-[#e9edef] text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                            Responder
+                          </button>
+                          <button
+                            onClick={() => { setForwardMsg(msg); setMenuMsgId(null); loadForwardContacts() }}
+                            className="w-full text-left px-4 py-2.5 text-[#e9edef] text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3-3 3m-9 0v-3a6 6 0 016-6h9"/></svg>
+                            Encaminhar
+                          </button>
+                          <div className="h-px bg-[#2a3942] mx-2 my-1"/>
+                          <button
+                            onClick={() => { setDeleteTarget(msg); setMenuMsgId(null) }}
+                            className="w-full text-left px-4 py-2.5 text-red-400 text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            Apagar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div
                     className={`max-w-[65%] px-3 py-2 rounded-lg shadow-sm relative ${
                       isIntMsg
@@ -1941,6 +2215,20 @@ export function ChatPanel({
                         Interno
                       </span>
                     )}
+
+                    {/* Quoted message (reply) */}
+                    {replyData && (
+                      <div className={`flex gap-1.5 mb-2 rounded-lg overflow-hidden cursor-default ${msg.from_me ? 'bg-[#004034]' : 'bg-[#1a2530]'}`}>
+                        <div className="w-1 bg-[#00a884] flex-shrink-0 rounded-l-lg" />
+                        <div className="flex-1 px-2 py-1.5 min-w-0">
+                          <p className="text-[#00a884] text-[11px] font-medium mb-0.5">
+                            {replyData.from_me ? 'Você' : (replyData.sender_name || contact.name || contact.phone)}
+                          </p>
+                          <p className="text-[#8696a0] text-xs truncate">{replyData.body || '[mídia]'}</p>
+                        </div>
+                      </div>
+                    )}
+
                     {showSender && (
                       <button
                         type="button"
@@ -2359,6 +2647,22 @@ export function ChatPanel({
                 ))
               )}
             </div>
+          </div>
+        )}
+
+        {/* Preview de resposta ativa */}
+        {replyingTo && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-[#1f2c34] border-t border-[#2a3942] flex-shrink-0">
+            <div className="w-0.5 self-stretch bg-[#00a884] rounded-full flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[#00a884] text-xs font-medium">{replyingTo.from_me ? 'Você' : (contact.name || contact.phone)}</p>
+              <p className="text-[#8696a0] text-xs truncate">{replyingTo.body || '[mídia]'}</p>
+            </div>
+            <button onClick={() => setReplyingTo(null)} className="text-[#8696a0] hover:text-white transition flex-shrink-0 p-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         )}
 
