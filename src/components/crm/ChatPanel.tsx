@@ -443,6 +443,9 @@ export function ChatPanel({
   const [savingProfileLead, setSavingProfileLead] = useState(false)
   const [markingWonProfile, setMarkingWonProfile] = useState(false)
   const [wonSuccessProfile, setWonSuccessProfile] = useState(false)
+  const [profileSaleValue, setProfileSaleValue] = useState('0')
+  const [markingDirectSale, setMarkingDirectSale] = useState(false)
+  const [directSaleSuccess, setDirectSaleSuccess] = useState(false)
 
   // Mensagens interativas
   const [showInteractive, setShowInteractive] = useState(false)
@@ -974,6 +977,8 @@ export function ChatPanel({
     setProfileLeadTitle('')
     setProfileLeadValue('0')
     setProfileLeadNotes('')
+    setProfileSaleValue('0')
+    setDirectSaleSuccess(false)
     try {
       const sb = createBrowserClient()
       const { data: contactData } = await sb
@@ -1230,6 +1235,50 @@ export function ChatPanel({
               <p className="text-[#8696a0] text-xs mb-1">Telefone</p>
               <p className="text-[#e9edef] text-sm">+{profilePanel.phone}</p>
             </div>
+
+            {/* Orçamento + Registrar venda */}
+            {!profilePanel.loading && profilePanel.contact && (
+              <div className="px-6 py-5 border-b border-[#2a3942] space-y-3">
+                <p className="text-[#8696a0] text-xs font-medium uppercase tracking-wide">Orçamento / Venda</p>
+                <div>
+                  <label className="text-[#8696a0] text-xs mb-1 block">Valor (R$)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={profileSaleValue}
+                    onChange={e => setProfileSaleValue(e.target.value)}
+                    className="w-full bg-[#202c33] text-white text-sm rounded-lg px-3 py-2 outline-none border border-[#2a3942] focus:border-[#00a884] transition"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    if (markingDirectSale) return
+                    setMarkingDirectSale(true)
+                    await fetch('/api/whatsapp/conversions', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        contact_id: profilePanel.contact!.id,
+                        event_name: 'Purchase',
+                        value: Number(profileSaleValue) || 0,
+                        currency: 'BRL',
+                      }),
+                    })
+                    setMarkingDirectSale(false)
+                    setDirectSaleSuccess(true)
+                    setTimeout(() => setDirectSaleSuccess(false), 2500)
+                  }}
+                  disabled={markingDirectSale}
+                  className={`w-full py-2.5 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                    directSaleSuccess
+                      ? 'bg-green-600 text-white'
+                      : 'bg-green-900/30 hover:bg-green-900/60 text-green-400 border border-green-800'
+                  }`}
+                >
+                  {directSaleSuccess ? '✓ Venda registrada!' : markingDirectSale ? 'Registrando...' : '$ Registrar como venda (Meta Conversions)'}
+                </button>
+              </div>
+            )}
 
             {profilePanel.loading && (
               <div className="flex justify-center py-6">
