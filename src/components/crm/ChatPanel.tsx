@@ -472,6 +472,11 @@ export function ChatPanel({
   const qrAudioChunksRef = useRef<Blob[]>([])
   const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Fecha painel de perfil ao trocar de conversa
+  useEffect(() => {
+    setProfilePanel(null)
+  }, [contact.id])
+
   useEffect(() => {
     setMessages([])
     setLoading(true)

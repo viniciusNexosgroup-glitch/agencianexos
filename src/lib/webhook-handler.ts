@@ -245,9 +245,16 @@ export async function processWebhookEvent(body: any) {
         }
       }
 
-      // Incrementa não lidas para qualquer mensagem recebida (individual ou grupo)
+      // Incrementa não lidas para mensagens recebidas; zera para enviadas por mim
       if (!fromMe) {
         await db.rpc('increment_unread_count', { p_instance_name: instance, p_phone: phone })
+      } else {
+        // Garante que mensagem enviada por mim não incremente o badge (defensivo contra RPC)
+        await db.from('whatsapp_contacts')
+          .update({ unread_count: 0 })
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+          .gt('unread_count', 0)
       }
 
       // Executa flows ativos para mensagens recebidas (independente de erro na RPC)
