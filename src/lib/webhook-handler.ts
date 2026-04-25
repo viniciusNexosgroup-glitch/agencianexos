@@ -226,6 +226,24 @@ export async function processWebhookEvent(body: any) {
         } catch { /* falha silenciosa */ }
       }
 
+      // Contato compartilhado: salva vcard em media_data
+      if (!error && msgType === 'contactMessage') {
+        const c = innerMsg.contactMessage
+        if (c?.vcard) {
+          await db.from('whatsapp_messages')
+            .update({ media_data: { displayName: c.displayName || '', vcard: c.vcard } })
+            .eq('message_id', msg.key.id)
+        }
+      }
+      if (!error && msgType === 'contactsArrayMessage') {
+        const contacts = (innerMsg.contactsArrayMessage?.contacts ?? []) as Array<{ displayName?: string; vcard?: string }>
+        if (contacts.length > 0) {
+          await db.from('whatsapp_messages')
+            .update({ media_data: { contacts: contacts.map(c => ({ displayName: c.displayName || '', vcard: c.vcard || '' })) } })
+            .eq('message_id', msg.key.id)
+        }
+      }
+
       // Vídeo: salva thumbnail + dados completos do vídeo (mediaKey, url, etc.) para download sob demanda
       if (!error && msgType === 'videoMessage') {
         const videoMsg = innerMsg.videoMessage

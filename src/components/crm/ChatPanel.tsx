@@ -81,6 +81,80 @@ function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+function parseVCard(vcard: string): { name: string; phone: string; org: string } {
+  const lines = vcard.split(/\r?\n/)
+  let name = '', phone = '', org = ''
+  for (const line of lines) {
+    if (line.startsWith('FN:')) name = line.slice(3).trim()
+    else if (line.startsWith('ORG:')) org = line.slice(4).replace(/;/g, ' ').trim()
+    else if (line.startsWith('TEL')) {
+      const waid = line.match(/waid=(\d+)/)
+      if (waid) phone = waid[1]
+      else {
+        const colon = line.lastIndexOf(':')
+        if (colon !== -1) phone = line.slice(colon + 1).replace(/[^\d+]/g, '')
+      }
+    }
+  }
+  return { name, phone, org }
+}
+
+function ContactCard({
+  displayName,
+  vcard,
+  fromMe,
+  instanceName,
+  onConverse,
+}: {
+  displayName: string
+  vcard: string
+  fromMe: boolean
+  instanceName: string
+  onConverse?: (phone: string, instance: string) => void
+}) {
+  const [showDetails, setShowDetails] = useState(false)
+  const parsed = parseVCard(vcard)
+  const name = parsed.name || displayName || 'Contato'
+  const initials = name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+  const bg = AVATAR_COLORS[Math.abs(name.split('').reduce((h: number, c: string) => c.charCodeAt(0) + ((h << 5) - h), 0)) % AVATAR_COLORS.length]
+
+  return (
+    <div className={`rounded-xl overflow-hidden min-w-[220px] max-w-[260px] ${fromMe ? 'bg-[#1f5c37]' : 'bg-[#202c33]'}`}>
+      <div className="flex items-center gap-3 px-3 py-3">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 ${bg}`}>
+          {initials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-medium truncate">{name}</p>
+          {parsed.org && <p className="text-[#8696a0] text-xs truncate">{parsed.org}</p>}
+          {parsed.phone && <p className="text-[#8696a0] text-xs">{parsed.phone}</p>}
+        </div>
+      </div>
+      <div className={`border-t ${fromMe ? 'border-[#1a7a42]' : 'border-[#2a3942]'} flex`}>
+        <button
+          onClick={() => parsed.phone && onConverse?.(parsed.phone, instanceName)}
+          disabled={!parsed.phone}
+          className={`flex-1 text-center py-2 text-xs font-medium transition ${parsed.phone ? 'text-[#00a884] hover:bg-[#ffffff10]' : 'text-[#8696a0]'}`}
+        >
+          Conversar
+        </button>
+        <div className={`w-px ${fromMe ? 'bg-[#1a7a42]' : 'bg-[#2a3942]'}`} />
+        <button
+          onClick={() => setShowDetails(v => !v)}
+          className="flex-1 text-center py-2 text-[#00a884] text-xs font-medium hover:bg-[#ffffff10] transition"
+        >
+          {showDetails ? 'Ocultar' : 'Ver detalhes'}
+        </button>
+      </div>
+      {showDetails && (
+        <div className={`px-3 py-2 border-t ${fromMe ? 'border-[#1a7a42]' : 'border-[#2a3942]'}`}>
+          <pre className="text-[10px] text-[#8696a0] whitespace-pre-wrap break-all leading-4">{vcard}</pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function groupMessagesByDate(messages: Message[]) {
   const groups: { date: string; messages: Message[] }[] = []
   for (const msg of messages) {
@@ -1912,13 +1986,47 @@ export function ChatPanel({
                       <span className="italic text-[#8696a0] text-xs">📄 Documento</span>
                     )}
 
+                    {/* Contato compartilhado */}
+                    {(msg.message_type === 'contactMessage' || msg.message_type === 'contactsArrayMessage') && (() => {
+                      const d = msg.media_data as Record<string, unknown> | null
+                      if (!d) return <span className="italic text-[#8696a0] text-xs">👤 Contato</span>
+                      if (msg.message_type === 'contactMessage') {
+                        return (
+                          <ContactCard
+                            displayName={(d.displayName as string) || ''}
+                            vcard={(d.vcard as string) || ''}
+                            fromMe={msg.from_me}
+                            instanceName={contact.instance_name}
+                            onConverse={onOpenContact}
+                          />
+                        )
+                      }
+                      const contacts = (d.contacts as Array<{ displayName: string; vcard: string }>) ?? []
+                      return (
+                        <div className="flex flex-col gap-2">
+                          {contacts.map((c, i) => (
+                            <ContactCard
+                              key={i}
+                              displayName={c.displayName}
+                              vcard={c.vcard}
+                              fromMe={msg.from_me}
+                              instanceName={contact.instance_name}
+                              onConverse={onOpenContact}
+                            />
+                          ))}
+                        </div>
+                      )
+                    })()}
+
                     {/* Texto (incluindo legenda de imagem/vídeo) */}
                     {msg.message_type !== 'imageMessage' &&
                      msg.message_type !== 'stickerMessage' &&
                      msg.message_type !== 'audioMessage' &&
                      msg.message_type !== 'ptvMessage' &&
                      msg.message_type !== 'videoMessage' &&
-                     msg.message_type !== 'documentMessage' && (
+                     msg.message_type !== 'documentMessage' &&
+                     msg.message_type !== 'contactMessage' &&
+                     msg.message_type !== 'contactsArrayMessage' && (
                       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                         {msg.body
                           ? (searchQuery ? highlightText(msg.body, searchQuery) : msg.body)
