@@ -578,6 +578,7 @@ export default function CalendarPage() {
   }
 
   function openEdit(ev: CalEvent) {
+    if (ev.id.startsWith('google_')) return // eventos do Google são somente leitura
     setEditingEvent(ev)
     setModalData(ev)
   }
