@@ -572,6 +572,7 @@ export function ChatPanel({
   const [forwardingTo, setForwardingTo] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Message | null>(null)
   const [deletingMsg, setDeletingMsg] = useState(false)
+  const [forwardSuccess, setForwardSuccess] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Fecha painel de perfil ao trocar de conversa
@@ -827,20 +828,51 @@ export function ChatPanel({
     setForwardingTo(targetContact.id)
     const to = targetContact.remote_jid || targetContact.phone
     try {
-      await fetch('/api/whatsapp/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instanceName: targetContact.instance_name,
-          contactId: targetContact.id,
-          phone: to,
-          text: forwardMsg.body || '[mídia]',
-        }),
-      })
-    } finally {
-      setForwardingTo(null)
+      const isMidia = ['imageMessage','audioMessage','videoMessage','stickerMessage','ptvMessage'].includes(forwardMsg.message_type)
+
+      if (isMidia && forwardMsg.media_url?.startsWith('data:')) {
+        // Encaminhar mídia com base64 via Evolution API
+        const mime = forwardMsg.media_url.split(';')[0].replace('data:', '')
+        const base64 = forwardMsg.media_url.split(',')[1]
+        const mediaType = forwardMsg.message_type === 'audioMessage' || forwardMsg.message_type === 'ptvMessage'
+          ? 'audio' : forwardMsg.message_type === 'imageMessage' ? 'image' : 'video'
+        await fetch(`/api/whatsapp/send-media`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instanceName: targetContact.instance_name,
+            contactId: targetContact.id,
+            phone: to,
+            mediatype: mediaType,
+            mimetype: mime,
+            media: base64,
+            caption: forwardMsg.body || '',
+          }),
+        })
+      } else {
+        // Texto puro ou mídia sem base64 armazenado
+        const text = forwardMsg.body || (isMidia ? '[Mídia encaminhada]' : '')
+        await fetch('/api/whatsapp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instanceName: targetContact.instance_name,
+            contactId: targetContact.id,
+            phone: to,
+            text,
+          }),
+        })
+      }
+
       setForwardMsg(null)
       setForwardSearch('')
+      setForwardSuccess(`Mensagem encaminhada para ${targetContact.name || targetContact.phone}`)
+      setTimeout(() => setForwardSuccess(null), 3000)
+    } catch {
+      setForwardSuccess('Erro ao encaminhar mensagem')
+      setTimeout(() => setForwardSuccess(null), 3000)
+    } finally {
+      setForwardingTo(null)
     }
   }
 
@@ -1798,6 +1830,14 @@ export function ChatPanel({
         </div>
       )}
 
+      {/* ── Toast de sucesso ── */}
+      {forwardSuccess && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#005c4b] text-white text-sm px-5 py-2.5 rounded-full shadow-2xl flex items-center gap-2 animate-fade-in">
+          <svg className="w-4 h-4 text-[#00a884]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
+          {forwardSuccess}
+        </div>
+      )}
+
       {/* ── Modal: Encaminhar mensagem ── */}
       {forwardMsg && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={() => { setForwardMsg(null); setForwardSearch('') }}>
@@ -2134,24 +2174,19 @@ export function ChatPanel({
 
               const QUICK_EMOJIS = ['👍','❤️','😂','😮','😢','🙏']
               const replyData = (msg.media_data as Record<string, unknown> | null)?._reply as { body?: string; sender_name?: string | null; from_me?: boolean } | undefined
+              const isMenuOpen = menuMsgId === msg.id
+              const isReactOpen = reactionMsgId === msg.id
 
               return (
-                <div key={msg.id} className={`flex mb-1 group/msg ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
+                <div key={msg.id} className={`relative flex mb-1 group/msg ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
 
-                  {/* Ações hover (lado esquerdo para fromMe, direito para recebidas) */}
-                  <div className={`flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity flex-shrink-0 self-end mb-1 ${msg.from_me ? 'order-first mr-1' : 'order-last ml-1'}`}>
-                    {/* Quick reactions */}
-                    {reactionMsgId === msg.id && (
-                      <div ref={menuRef} className={`absolute ${msg.from_me ? 'right-10' : 'left-10'} bottom-8 z-20 flex items-center gap-1 bg-[#233138] border border-[#2a3942] rounded-full px-2 py-1.5 shadow-xl`}>
-                        {QUICK_EMOJIS.map(e => (
-                          <button key={e} onClick={() => handleReact(msg, e)} className="text-lg hover:scale-125 transition-transform">
-                            {e}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                  {/* Botões de ação — ficam visíveis no hover OU quando menu/reação estão abertos */}
+                  <div
+                    className={`flex items-center gap-0.5 transition-opacity duration-150 flex-shrink-0 self-end mb-1 ${msg.from_me ? 'order-first mr-1' : 'order-last ml-1'} ${isMenuOpen || isReactOpen ? 'opacity-100' : 'opacity-0 group-hover/msg:opacity-100'}`}
+                  >
                     <button
-                      onClick={() => setReactionMsgId(id => id === msg.id ? null : msg.id)}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={() => { setReactionMsgId(id => id === msg.id ? null : msg.id); setMenuMsgId(null) }}
                       className="w-7 h-7 rounded-full bg-[#233138] hover:bg-[#2a3942] flex items-center justify-center text-[#8696a0] hover:text-white transition shadow"
                       title="Reagir"
                     >
@@ -2159,45 +2194,62 @@ export function ChatPanel({
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                       </svg>
                     </button>
-                    {/* Chevron menu */}
-                    <div className="relative">
-                      <button
-                        onClick={() => { setMenuMsgId(id => id === msg.id ? null : msg.id); setReactionMsgId(null) }}
-                        className="w-7 h-7 rounded-full bg-[#233138] hover:bg-[#2a3942] flex items-center justify-center text-[#8696a0] hover:text-white transition shadow"
-                        title="Mais opções"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M7 10l5 5 5-5z"/>
-                        </svg>
-                      </button>
-                      {menuMsgId === msg.id && (
-                        <div ref={menuRef} className={`absolute ${msg.from_me ? 'right-0' : 'left-0'} bottom-8 z-20 bg-[#233138] border border-[#2a3942] rounded-xl shadow-xl py-1 min-w-[160px]`}>
-                          <button
-                            onClick={() => { setReplyingTo(msg); setMenuMsgId(null); inputRef.current?.focus() }}
-                            className="w-full text-left px-4 py-2.5 text-[#e9edef] text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
-                          >
-                            <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-                            Responder
-                          </button>
-                          <button
-                            onClick={() => { setForwardMsg(msg); setMenuMsgId(null); loadForwardContacts() }}
-                            className="w-full text-left px-4 py-2.5 text-[#e9edef] text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
-                          >
-                            <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3-3 3m-9 0v-3a6 6 0 016-6h9"/></svg>
-                            Encaminhar
-                          </button>
-                          <div className="h-px bg-[#2a3942] mx-2 my-1"/>
-                          <button
-                            onClick={() => { setDeleteTarget(msg); setMenuMsgId(null) }}
-                            className="w-full text-left px-4 py-2.5 text-red-400 text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                            Apagar
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={() => { setMenuMsgId(id => id === msg.id ? null : msg.id); setReactionMsgId(null) }}
+                      className="w-7 h-7 rounded-full bg-[#233138] hover:bg-[#2a3942] flex items-center justify-center text-[#8696a0] hover:text-white transition shadow"
+                      title="Mais opções"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M7 10l5 5 5-5z"/>
+                      </svg>
+                    </button>
                   </div>
+
+                  {/* Picker de reações — fora do container de opacidade, não some ao mover o mouse */}
+                  {isReactOpen && (
+                    <div
+                      ref={menuRef}
+                      className={`absolute bottom-10 z-30 flex items-center gap-1 bg-[#233138] border border-[#2a3942] rounded-full px-3 py-2 shadow-2xl ${msg.from_me ? 'right-16' : 'left-16'}`}
+                    >
+                      {QUICK_EMOJIS.map(e => (
+                        <button key={e} onClick={() => handleReact(msg, e)} className="text-xl hover:scale-125 transition-transform leading-none">
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Menu dropdown — fora do container de opacidade */}
+                  {isMenuOpen && (
+                    <div
+                      ref={menuRef}
+                      className={`absolute bottom-10 z-30 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl py-1 min-w-[165px] ${msg.from_me ? 'right-16' : 'left-16'}`}
+                    >
+                      <button
+                        onClick={() => { setReplyingTo(msg); setMenuMsgId(null); setTimeout(() => inputRef.current?.focus(), 50) }}
+                        className="w-full text-left px-4 py-2.5 text-[#e9edef] text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                        Responder
+                      </button>
+                      <button
+                        onClick={() => { setForwardMsg(msg); setMenuMsgId(null); loadForwardContacts() }}
+                        className="w-full text-left px-4 py-2.5 text-[#e9edef] text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3-3 3m-9 0v-3a6 6 0 016-6h9"/></svg>
+                        Encaminhar
+                      </button>
+                      <div className="h-px bg-[#2a3942] mx-2 my-1"/>
+                      <button
+                        onClick={() => { setDeleteTarget(msg); setMenuMsgId(null) }}
+                        className="w-full text-left px-4 py-2.5 text-red-400 text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        Apagar
+                      </button>
+                    </div>
+                  )}
 
                   <div
                     className={`max-w-[65%] px-3 py-2 rounded-lg shadow-sm relative ${
