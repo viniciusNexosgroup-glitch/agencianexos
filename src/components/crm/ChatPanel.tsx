@@ -426,14 +426,23 @@ export function ChatPanel({
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Perfil do participante (grupos)
+  type ProfileLead = { id: string; title: string; value: number | null; notes: string | null; contact_id: string }
   type ParticipantProfile = {
     name: string
     phone: string
     jid: string
     loading: boolean
     contact: { id: string; name: string; phone: string; instance_name: string; profile_pic_url?: string | null; remote_jid?: string | null } | null
+    lead: ProfileLead | null
+    leadLoading: boolean
   }
   const [profilePanel, setProfilePanel] = useState<ParticipantProfile | null>(null)
+  const [profileLeadTitle, setProfileLeadTitle] = useState('')
+  const [profileLeadValue, setProfileLeadValue] = useState('0')
+  const [profileLeadNotes, setProfileLeadNotes] = useState('')
+  const [savingProfileLead, setSavingProfileLead] = useState(false)
+  const [markingWonProfile, setMarkingWonProfile] = useState(false)
+  const [wonSuccessProfile, setWonSuccessProfile] = useState(false)
 
   // Mensagens interativas
   const [showInteractive, setShowInteractive] = useState(false)
@@ -961,18 +970,39 @@ export function ChatPanel({
 
   async function openParticipantProfile(name: string, jid: string) {
     const phone = jid.replace('@s.whatsapp.net', '').replace('@lid', '')
-    setProfilePanel({ name, phone, jid, contact: null, loading: true })
+    setProfilePanel({ name, phone, jid, contact: null, lead: null, loading: true, leadLoading: true })
+    setProfileLeadTitle('')
+    setProfileLeadValue('0')
+    setProfileLeadNotes('')
     try {
       const sb = createBrowserClient()
-      const { data } = await sb
+      const { data: contactData } = await sb
         .from('whatsapp_contacts')
         .select('id, name, phone, instance_name, profile_pic_url, remote_jid')
         .eq('instance_name', contact.instance_name)
         .eq('phone', phone)
         .maybeSingle()
-      setProfilePanel(prev => prev ? { ...prev, contact: data ?? null, loading: false } : null)
+      setProfilePanel(prev => prev ? { ...prev, contact: contactData ?? null, loading: false } : null)
+
+      if (contactData?.id) {
+        const { data: leadData } = await sb
+          .from('crm_leads')
+          .select('id, title, value, notes, contact_id')
+          .eq('contact_id', contactData.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        setProfilePanel(prev => prev ? { ...prev, lead: leadData ?? null, leadLoading: false } : null)
+        if (leadData) {
+          setProfileLeadTitle(leadData.title ?? '')
+          setProfileLeadValue(String(leadData.value ?? 0))
+          setProfileLeadNotes(leadData.notes ?? '')
+        }
+      } else {
+        setProfilePanel(prev => prev ? { ...prev, leadLoading: false } : null)
+      }
     } catch {
-      setProfilePanel(prev => prev ? { ...prev, loading: false } : null)
+      setProfilePanel(prev => prev ? { ...prev, loading: false, leadLoading: false } : null)
     }
   }
 
@@ -1209,6 +1239,104 @@ export function ChatPanel({
             {!profilePanel.loading && !profilePanel.contact && (
               <div className="px-6 py-5">
                 <p className="text-[#8696a0] text-xs italic">Contato não encontrado no CRM</p>
+              </div>
+            )}
+
+            {/* ── Lead ── */}
+            {!profilePanel.loading && profilePanel.contact && (
+              <div className="px-6 py-5 border-t border-[#2a3942]">
+                <p className="text-[#8696a0] text-xs mb-3 font-medium uppercase tracking-wide">Lead</p>
+                {profilePanel.leadLoading ? (
+                  <p className="text-[#8696a0] text-xs">Carregando lead...</p>
+                ) : profilePanel.lead ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[#8696a0] text-xs mb-1 block">Nome do lead</label>
+                      <input
+                        value={profileLeadTitle}
+                        onChange={e => setProfileLeadTitle(e.target.value)}
+                        className="w-full bg-[#202c33] text-white text-sm rounded-lg px-3 py-2 outline-none border border-[#2a3942] focus:border-[#00a884] transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[#8696a0] text-xs mb-1 block">Valor (R$)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={profileLeadValue}
+                        onChange={e => setProfileLeadValue(e.target.value)}
+                        className="w-full bg-[#202c33] text-white text-sm rounded-lg px-3 py-2 outline-none border border-[#2a3942] focus:border-[#00a884] transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[#8696a0] text-xs mb-1 block">Observações</label>
+                      <textarea
+                        rows={3}
+                        value={profileLeadNotes}
+                        onChange={e => setProfileLeadNotes(e.target.value)}
+                        className="w-full bg-[#202c33] text-white text-sm rounded-lg px-3 py-2 outline-none border border-[#2a3942] focus:border-[#00a884] transition resize-none"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          setSavingProfileLead(true)
+                          await fetch('/api/whatsapp/leads', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: profilePanel.lead!.id, title: profileLeadTitle, value: Number(profileLeadValue) || 0, notes: profileLeadNotes }),
+                          })
+                          setSavingProfileLead(false)
+                          setProfilePanel(prev => prev ? { ...prev, lead: { ...prev.lead!, title: profileLeadTitle, value: Number(profileLeadValue) || 0, notes: profileLeadNotes } } : null)
+                        }}
+                        disabled={savingProfileLead}
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-medium py-2 rounded-lg transition"
+                      >
+                        {savingProfileLead ? 'Salvando...' : 'Salvar'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm('Excluir este lead?')) return
+                          await fetch(`/api/whatsapp/leads?id=${profilePanel.lead!.id}`, { method: 'DELETE' })
+                          setProfilePanel(prev => prev ? { ...prev, lead: null } : null)
+                        }}
+                        className="px-4 py-2 text-sm text-red-400 hover:text-red-300 border border-red-900 rounded-lg transition"
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (markingWonProfile) return
+                        setMarkingWonProfile(true)
+                        await fetch('/api/whatsapp/conversions', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            contact_id: profilePanel.lead!.contact_id,
+                            lead_id: profilePanel.lead!.id,
+                            event_name: 'Purchase',
+                            value: Number(profileLeadValue) || 0,
+                            currency: 'BRL',
+                          }),
+                        })
+                        setMarkingWonProfile(false)
+                        setWonSuccessProfile(true)
+                        setTimeout(() => setWonSuccessProfile(false), 2000)
+                      }}
+                      disabled={markingWonProfile}
+                      className={`w-full py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                        wonSuccessProfile
+                          ? 'bg-green-600 text-white'
+                          : 'bg-green-900/30 hover:bg-green-900/60 text-green-400 border border-green-800'
+                      }`}
+                    >
+                      {wonSuccessProfile ? '✓ Venda registrada!' : markingWonProfile ? 'Registrando...' : '$ Registrar como venda (Meta Conversions)'}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[#8696a0] text-xs italic">Nenhum lead vinculado a este contato</p>
+                )}
               </div>
             )}
           </div>
