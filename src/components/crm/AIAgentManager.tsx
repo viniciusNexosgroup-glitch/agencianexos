@@ -14,6 +14,7 @@ type AIAgent = {
   is_active: boolean
   handoff_keywords: string[]
   temperature: number
+  api_key?: string
 }
 
 const MODELS: Record<string, string[]> = {
@@ -29,6 +30,7 @@ const DEFAULT_AGENT: Omit<AIAgent, 'instance_name'> = {
   is_active: false,
   handoff_keywords: ['humano', 'atendente', 'pessoa real'],
   temperature: 0.7,
+  api_key: '',
 }
 
 export function AIAgentManager() {
@@ -43,6 +45,7 @@ export function AIAgentManager() {
   const [testReply, setTestReply] = useState('')
   const [testing, setTesting] = useState(false)
   const [keywordInput, setKeywordInput] = useState('')
+  const [showApiKey, setShowApiKey] = useState(false)
 
   useEffect(() => {
     fetch('/api/whatsapp/instance')
@@ -181,6 +184,42 @@ export function AIAgentManager() {
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic (Claude)</option>
               </select>
+            </div>
+
+            {/* API Key */}
+            <div className="col-span-2">
+              <label className="text-slate-400 text-xs font-medium block mb-1.5">
+                Token da API {form.provider === 'openai' ? 'OpenAI' : 'Anthropic'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={form.api_key ?? ''}
+                  onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))}
+                  className="w-full bg-slate-800 text-white text-sm rounded-lg px-3 py-2 pr-10 outline-none border border-slate-700 focus:border-indigo-500 transition placeholder-slate-500 font-mono"
+                  placeholder={form.provider === 'openai' ? 'sk-...' : 'sk-ant-...'}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition"
+                  tabIndex={-1}
+                >
+                  {showApiKey ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <p className="text-slate-500 text-xs mt-1">
+                Sua chave de API. Os custos de uso serão cobrados diretamente na sua conta {form.provider === 'openai' ? 'OpenAI' : 'Anthropic'}.
+              </p>
             </div>
 
             {/* Modelo */}

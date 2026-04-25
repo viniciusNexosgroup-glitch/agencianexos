@@ -32,16 +32,16 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const body = await req.json()
-  const { instance_name, name, provider, model, system_prompt, is_active, handoff_keywords, temperature } = body
+  const { instance_name, name, provider, model, system_prompt, is_active, handoff_keywords, temperature, api_key } = body
 
   if (!instance_name) return NextResponse.json({ error: 'instance_name obrigatório' }, { status: 400 })
 
+  const record: Record<string, unknown> = { instance_name, name, provider, model, system_prompt, is_active, handoff_keywords, temperature }
+  if (api_key !== undefined) record.api_key = api_key
+
   const { data, error } = await supabase()
     .from('ai_agents')
-    .upsert(
-      { instance_name, name, provider, model, system_prompt, is_active, handoff_keywords, temperature },
-      { onConflict: 'instance_name' }
-    )
+    .upsert(record, { onConflict: 'instance_name' })
     .select()
     .single()
 
