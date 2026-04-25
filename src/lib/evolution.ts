@@ -77,10 +77,7 @@ export async function sendTextMessage(instanceName: string, to: string, text: st
   const res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({
-      number: to,
-      textMessage: { text },
-    }),
+    body: JSON.stringify({ number: to, text }),
   })
   return res.json()
 }

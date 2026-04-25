@@ -45,20 +45,24 @@ async function executeStep(
       console.log('[FlowEngine] resultado envio:', JSON.stringify(sendResult))
 
       // Salva a mensagem enviada pelo flow no banco
-      await db.from('whatsapp_messages').insert({
-        contact_id: contactId,
-        message_id: `flow_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        body: step.message,
-        from_me: true,
-        timestamp: new Date().toISOString(),
-        message_type: 'conversation',
-      }).catch(() => {})
+      try {
+        await db.from('whatsapp_messages').insert({
+          contact_id: contactId,
+          message_id: `flow_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          body: step.message,
+          from_me: true,
+          timestamp: new Date().toISOString(),
+          message_type: 'conversation',
+        })
+      } catch {}
 
-      await db.rpc('update_last_message', {
-        p_contact_id: contactId,
-        p_body: step.message,
-        p_timestamp: new Date().toISOString(),
-      }).catch(() => {})
+      try {
+        await db.rpc('update_last_message', {
+          p_contact_id: contactId,
+          p_body: step.message,
+          p_timestamp: new Date().toISOString(),
+        })
+      } catch {}
     }
 
     if (step.type === 'tag' && step.tag_name) {
@@ -69,19 +73,22 @@ async function executeStep(
         .maybeSingle()
 
       if (tag?.id) {
-        await db.from('contact_tags').upsert(
-          { contact_id: contactId, tag_id: tag.id },
-          { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
-        ).catch(() => {})
+        try {
+          await db.from('contact_tags').upsert(
+            { contact_id: contactId, tag_id: tag.id },
+            { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
+          )
+        } catch {}
       }
     }
 
     if (step.type === 'assign' && step.agent_id) {
-      await db
-        .from('whatsapp_contacts')
-        .update({ assigned_to: step.agent_id })
-        .eq('id', contactId)
-        .catch(() => {})
+      try {
+        await db
+          .from('whatsapp_contacts')
+          .update({ assigned_to: step.agent_id })
+          .eq('id', contactId)
+      } catch {}
     }
   } catch (err) {
     console.error('[FlowEngine] Erro ao executar step:', step.type, err)
