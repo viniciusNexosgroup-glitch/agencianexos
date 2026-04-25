@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
       trigger_type,
       trigger_value: trigger_value ?? null,
       is_active: false,
+      steps: body.steps ?? [],
       created_by: session.sub,
     })
     .select()

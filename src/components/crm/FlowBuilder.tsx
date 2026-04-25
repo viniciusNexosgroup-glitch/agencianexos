@@ -70,7 +70,9 @@ export function FlowBuilder() {
   const [loading, setLoading] = useState(true)
   const [editingFlow, setEditingFlow] = useState<Flow | null>(null)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [toggleError, setToggleError] = useState<string | null>(null)
   const [showNewForm, setShowNewForm] = useState(false)
   const [newFlowName, setNewFlowName] = useState('')
   const [newFlowInstance, setNewFlowInstance] = useState('')
@@ -136,17 +138,22 @@ export function FlowBuilder() {
 
   async function handleToggle(flow: Flow) {
     setTogglingId(flow.id)
+    setToggleError(null)
     try {
       const res = await fetch(`/api/whatsapp/flows/${flow.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'toggle' }),
       })
+      const d = await res.json()
       if (res.ok) {
-        const d = await res.json()
         const newStatus = d.flow?.is_active ? 'active' : 'inactive'
         setFlows(fs => fs.map(f => f.id === flow.id ? { ...f, status: newStatus } : f))
+      } else {
+        setToggleError(d.error ?? `Erro ao alterar status (${res.status})`)
       }
+    } catch (err: any) {
+      setToggleError(err.message ?? 'Erro de rede ao alterar status')
     } finally {
       setTogglingId(null)
     }
@@ -193,13 +200,21 @@ export function FlowBuilder() {
   async function handleSave() {
     if (!editingFlow) return
     setSaving(true)
+    setSaveError(null)
     try {
-      await fetch(`/api/whatsapp/flows/${editingFlow.id}`, {
+      const res = await fetch(`/api/whatsapp/flows/${editingFlow.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingFlow),
       })
-      setFlows(fs => fs.map(f => f.id === editingFlow.id ? editingFlow : f))
+      const d = await res.json()
+      if (res.ok) {
+        setFlows(fs => fs.map(f => f.id === editingFlow.id ? editingFlow : f))
+      } else {
+        setSaveError(d.error ?? `Erro ao salvar (${res.status})`)
+      }
+    } catch (err: any) {
+      setSaveError(err.message ?? 'Erro de rede ao salvar')
     } finally {
       setSaving(false)
     }
@@ -389,6 +404,15 @@ export function FlowBuilder() {
           </button>
         </div>
 
+        {saveError && (
+          <div className="bg-red-900/40 border border-red-500/50 rounded-lg px-4 py-3 text-red-300 text-sm">
+            <strong>Erro ao salvar:</strong> {saveError}
+            {saveError.includes('steps') && (
+              <p className="mt-1 text-red-400 text-xs">Execute no Supabase SQL Editor: <code className="bg-slate-800 px-1 rounded">ALTER TABLE flows ADD COLUMN IF NOT EXISTS steps JSONB DEFAULT '[]'::jsonb;</code></p>
+            )}
+          </div>
+        )}
+
         <div className="flex justify-end">
           <button
             onClick={handleSave}
@@ -447,6 +471,13 @@ export function FlowBuilder() {
               {creating ? 'Criando...' : 'Criar'}
             </button>
           </form>
+        </div>
+      )}
+
+      {toggleError && (
+        <div className="bg-red-900/40 border border-red-500/50 rounded-lg px-4 py-3 text-red-300 text-sm flex items-center justify-between">
+          <span><strong>Erro ao alterar status:</strong> {toggleError}</span>
+          <button onClick={() => setToggleError(null)} className="text-red-400 hover:text-red-200 ml-4 text-xs">✕</button>
         </div>
       )}
 
