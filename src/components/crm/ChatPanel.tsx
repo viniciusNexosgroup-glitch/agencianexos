@@ -372,6 +372,7 @@ export function ChatPanel({
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Quick Replies
@@ -1787,7 +1788,9 @@ export function ChatPanel({
         onScroll={() => {
           const el = scrollContainerRef.current
           if (!el) return
-          isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+          isAtBottomRef.current = atBottom
+          setShowScrollBtn(!atBottom)
         }}
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23182229' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
@@ -1960,6 +1963,21 @@ export function ChatPanel({
         ))}
         <div ref={bottomRef} />
       </div>
+
+      {/* Botão scroll para o final (estilo WhatsApp) */}
+      {showScrollBtn && (
+        <button
+          onClick={() => {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+          }}
+          className="absolute bottom-24 right-5 z-10 w-10 h-10 rounded-full bg-[#202c33] border border-[#2a3942] shadow-lg flex items-center justify-center hover:bg-[#2a3942] transition-colors"
+          title="Ir para o final"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#8696a0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      )}
 
       {/* Error */}
       {error && (
