@@ -259,6 +259,8 @@ function VideoPlayer({
   )
 }
 
+let currentlyPlayingAudio: HTMLAudioElement | null = null
+
 function AudioPlayer({ src, fromMe }: { src: string; fromMe: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -277,8 +279,14 @@ function AudioPlayer({ src, fromMe }: { src: string; fromMe: boolean }) {
   function togglePlay() {
     const audio = audioRef.current
     if (!audio) return
-    if (playing) audio.pause()
-    else audio.play()
+    if (playing) {
+      audio.pause()
+    } else {
+      if (currentlyPlayingAudio && currentlyPlayingAudio !== audio) {
+        currentlyPlayingAudio.pause()
+      }
+      audio.play()
+    }
   }
 
   function formatDur(s: number) {
@@ -296,7 +304,7 @@ function AudioPlayer({ src, fromMe }: { src: string; fromMe: boolean }) {
       <audio
         ref={audioRef}
         src={src}
-        onPlay={() => setPlaying(true)}
+        onPlay={() => { setPlaying(true); currentlyPlayingAudio = audioRef.current }}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setCurrentTime(0) }}
         onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime ?? 0)}
