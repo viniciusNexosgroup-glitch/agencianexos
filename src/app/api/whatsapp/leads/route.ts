@@ -43,7 +43,27 @@ export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { contactId, stageId, funnelId, title, notes, value } = await req.json()
+  const body = await req.json()
+  const { contact_id, notes, value } = body
+  let { contactId, stageId, funnelId, title } = body
+
+  // Suporta contact_id (snake_case) além de contactId
+  if (!contactId && contact_id) contactId = contact_id
+
+  // Se não foi passado stageId, busca a primeira etapa "Lead" disponível
+  if (!stageId) {
+    const { data: stage } = await supabase()
+      .from('crm_stages')
+      .select('id, funnel_id')
+      .eq('name', 'Lead')
+      .order('position', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (stage) {
+      stageId = stage.id
+      funnelId = stage.funnel_id
+    }
+  }
 
   const { data: maxPos } = await supabase()
     .from('crm_leads')
@@ -51,7 +71,7 @@ export async function POST(req: NextRequest) {
     .eq('stage_id', stageId)
     .order('position', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   const position = (maxPos?.position ?? -1) + 1
 

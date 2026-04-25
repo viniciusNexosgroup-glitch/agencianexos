@@ -1335,7 +1335,30 @@ export function ChatPanel({
                     </button>
                   </div>
                 ) : (
-                  <p className="text-[#8696a0] text-xs italic">Nenhum lead vinculado a este contato</p>
+                  <div className="space-y-3">
+                    <p className="text-[#8696a0] text-xs italic">Nenhum lead vinculado a este contato</p>
+                    <button
+                      onClick={async () => {
+                        const contactId = profilePanel.contact!.id
+                        const res = await fetch('/api/whatsapp/leads', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ contact_id: contactId, title: profilePanel.contact!.name || profilePanel.phone }),
+                        })
+                        if (res.ok) {
+                          const d = await res.json()
+                          const newLead = d.lead ?? d
+                          setProfilePanel(prev => prev ? { ...prev, lead: newLead } : null)
+                          setProfileLeadTitle(newLead.title ?? '')
+                          setProfileLeadValue(String(newLead.value ?? 0))
+                          setProfileLeadNotes(newLead.notes ?? '')
+                        }
+                      }}
+                      className="w-full py-2 text-sm font-medium rounded-lg border border-[#2a3942] text-[#00a884] hover:bg-[#202c33] transition"
+                    >
+                      + Criar lead para este contato
+                    </button>
+                  </div>
                 )}
               </div>
             )}
