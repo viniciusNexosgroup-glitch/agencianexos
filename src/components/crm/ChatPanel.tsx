@@ -234,24 +234,39 @@ function VideoPlayer({
     <>
       {/* Thumbnail no chat */}
       <div
-        className="relative rounded-lg overflow-hidden cursor-pointer mb-1 group"
-        style={{ width: 220, height: 160 }}
+        className="relative rounded-xl overflow-hidden cursor-pointer mb-1 group"
+        style={{ width: 240, height: 180 }}
         onClick={openModal}
       >
-        <img src={thumbnail} alt="Vídeo" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/55 transition-colors flex items-center justify-center">
-          <div className="w-14 h-14 rounded-full bg-black/60 flex items-center justify-center shadow-lg">
-            <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+        {/* Fundo escuro sempre presente (fallback visível quando thumbnail falha) */}
+        <div className="absolute inset-0 bg-[#111c22] flex items-center justify-center">
+          <svg className="w-12 h-12 text-[#2a3942]" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/>
+          </svg>
+        </div>
+        {/* Thumbnail sobre o fundo */}
+        {thumbnail && (
+          <img
+            src={thumbnail}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
+        )}
+        {/* Overlay escuro + botão play */}
+        <div className="absolute inset-0 bg-black/30 group-hover:bg-black/45 transition-colors flex items-center justify-center">
+          <div className="w-16 h-16 rounded-full bg-black/55 border border-white/20 flex items-center justify-center shadow-xl backdrop-blur-sm group-hover:scale-105 transition-transform">
+            <svg className="w-8 h-8 text-white drop-shadow-lg" style={{ marginLeft: 3 }} fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z"/>
             </svg>
           </div>
         </div>
-        {/* Indicador de vídeo */}
-        <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 rounded px-1.5 py-0.5">
+        {/* Badge câmera (canto inferior esquerdo) */}
+        <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5 backdrop-blur-sm">
           <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
             <path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/>
           </svg>
-          <span className="text-white text-[10px]">Vídeo</span>
+          <span className="text-white text-[10px] font-medium">Vídeo</span>
         </div>
       </div>
 
