@@ -107,14 +107,15 @@ export async function fetchGroupInfo(instanceName: string, groupJid: string): Pr
   }
 }
 
-export async function markChatAsRead(instanceName: string, remoteJid: string, lastMessageId: string, fromMe: boolean) {
+export async function markChatAsRead(
+  instanceName: string,
+  readMessages: { remoteJid: string; fromMe: boolean; id: string }[]
+) {
   try {
     await fetch(`${BASE_URL}/chat/markMessageAsRead/${instanceName}`, {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({
-        readMessages: [{ remoteJid, fromMe, id: lastMessageId }],
-      }),
+      body: JSON.stringify({ readMessages }),
     })
   } catch { /* silencioso */ }
 }

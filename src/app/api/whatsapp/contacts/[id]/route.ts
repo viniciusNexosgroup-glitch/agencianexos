@@ -32,19 +32,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     if (contact) {
       const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
-      // Busca a última mensagem não enviada por mim para marcar como lida
-      const { data: lastMsg } = await db
+      // Busca todas as mensagens recebidas recentes para marcar como lidas
+      const { data: msgs } = await db
         .from('whatsapp_messages')
         .select('message_id, from_me')
         .eq('contact_id', params.id)
         .eq('from_me', false)
         .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .limit(50)
 
-      if (lastMsg?.message_id) {
-        // Envia confirmação de leitura ao WhatsApp (aparece tick azul para quem enviou)
-        await markChatAsRead(contact.instance_name, remoteJid, lastMsg.message_id, false)
+      if (msgs && msgs.length > 0) {
+        const readMessages = msgs.map(m => ({
+          remoteJid,
+          fromMe: false,
+          id: m.message_id,
+        }))
+        await markChatAsRead(contact.instance_name, readMessages)
       }
     }
 
