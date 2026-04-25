@@ -250,8 +250,8 @@ export async function processWebhookEvent(body: any) {
         await db.rpc('increment_unread_count', { p_instance_name: instance, p_phone: phone })
       }
 
-      // Executa flows ativos para mensagens recebidas (não grupos, não enviadas por mim)
-      if (!fromMe && !isGroup && !error) {
+      // Executa flows ativos para mensagens recebidas (independente de erro na RPC)
+      if (!fromMe && !isGroup) {
         const { data: contactForFlow } = await db
           .from('whatsapp_contacts')
           .select('id')
@@ -259,8 +259,9 @@ export async function processWebhookEvent(body: any) {
           .eq('phone', phone)
           .maybeSingle()
 
+        console.log('[Flow] contato encontrado:', contactForFlow?.id, 'text:', text, 'instance:', instance)
+
         if (contactForFlow?.id) {
-          // Verifica se é primeira mensagem do contato
           const { count: msgCount } = await db
             .from('whatsapp_messages')
             .select('id', { count: 'exact', head: true })

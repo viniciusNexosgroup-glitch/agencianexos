@@ -40,7 +40,9 @@ async function executeStep(
 ) {
   try {
     if (step.type === 'message' && step.message) {
-      await sendTextMessage(instanceName, remoteJid, step.message)
+      console.log('[FlowEngine] enviando mensagem para', remoteJid, ':', step.message)
+      const sendResult = await sendTextMessage(instanceName, remoteJid, step.message)
+      console.log('[FlowEngine] resultado envio:', JSON.stringify(sendResult))
 
       // Salva a mensagem enviada pelo flow no banco
       await db.from('whatsapp_messages').insert({
@@ -95,18 +97,23 @@ export async function runFlowsForMessage(
   isFirstMessage: boolean
 ) {
   try {
-    const { data: flows } = await db
+    const { data: flows, error: flowsError } = await db
       .from('flows')
       .select('id, trigger_type, trigger_value, steps')
       .eq('instance_name', instanceName)
       .eq('is_active', true)
 
+    console.log('[FlowEngine] flows ativos para', instanceName, ':', flows?.length ?? 0, flowsError?.message ?? '')
+
     if (!flows || flows.length === 0) return
 
     for (const flow of flows as Flow[]) {
       const steps: FlowStep[] = flow.steps ?? []
-      if (steps.length === 0) continue
-      if (!triggerMatches(flow, text, isFirstMessage)) continue
+      console.log('[FlowEngine] avaliando flow', flow.id, 'trigger:', flow.trigger_type, flow.trigger_value, 'steps:', steps.length, 'text:', text)
+      if (steps.length === 0) { console.log('[FlowEngine] sem steps, pulando'); continue }
+      if (!triggerMatches(flow, text, isFirstMessage)) { console.log('[FlowEngine] trigger não bateu, pulando'); continue }
+
+      console.log('[FlowEngine] trigger bateu! executando flow', flow.id)
 
       // Não dispara o mesmo flow duas vezes para o mesmo contato
       const { data: existing } = await db
