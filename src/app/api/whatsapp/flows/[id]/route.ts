@@ -45,7 +45,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!flow) return NextResponse.json({ error: 'Flow não encontrado' }, { status: 404 })
 
   // Formato do FlowBuilder: salva steps + config diretamente na tabela flows
-  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  const updates: Record<string, unknown> = {}
   if (body.name !== undefined) updates.name = body.name
   if (body.trigger_type !== undefined) updates.trigger_type = body.trigger_type
   if (body.trigger_value !== undefined) updates.trigger_value = body.trigger_value
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: updated, error } = await db
     .from('flows')
-    .update({ is_active: !flow.is_active, updated_at: new Date().toISOString() })
+    .update({ is_active: !flow.is_active })
     .eq('id', id)
     .select()
     .single()
