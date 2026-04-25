@@ -128,6 +128,20 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
     onDelete()
   }
 
+  async function reconfigureWebhook() {
+    const res = await fetch(`/api/whatsapp/instance/${instance.instance_name}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set_webhook' }),
+    })
+    if (res.ok) {
+      alert('Webhook reconfigurado com sucesso!')
+    } else {
+      const d = await res.json()
+      alert('Erro: ' + (d.error ?? 'falha ao configurar webhook'))
+    }
+  }
+
   async function saveBusinessHours() {
     setSavingHours(true)
     try {
@@ -193,6 +207,9 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={checkStatus} className="text-xs text-slate-400 hover:text-white transition px-2 py-1 rounded border border-slate-700">
             Verificar
+          </button>
+          <button onClick={reconfigureWebhook} className="text-xs text-blue-400 hover:text-blue-300 transition px-2 py-1 rounded border border-blue-800">
+            Configurar Webhook
           </button>
           {status === 'connected' && (
             <button onClick={handleDisconnect} className="text-xs text-yellow-400 hover:text-yellow-300 transition px-2 py-1 rounded border border-yellow-800">

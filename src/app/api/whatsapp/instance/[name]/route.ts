@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getQRCode, getInstanceStatus, deleteInstance, logoutInstance } from '@/lib/evolution'
+import { getQRCode, getInstanceStatus, deleteInstance, logoutInstance, setWebhook } from '@/lib/evolution'
 import { getSession } from '@/lib/session'
 
 function supabase() {
@@ -54,4 +54,21 @@ export async function DELETE(req: NextRequest, { params }: { params: { name: str
   await deleteInstance(name)
   await supabase().from('whatsapp_instances').delete().eq('instance_name', name)
   return NextResponse.json({ success: true })
+}
+
+export async function POST(req: NextRequest, { params }: { params: { name: string } }) {
+  const session = await getSession()
+  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  const { name } = params
+  const body = await req.json()
+
+  if (body.action === 'set_webhook') {
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dashboard.viniciusguilherme.shop'
+    const webhookUrl = `${baseUrl}/api/whatsapp/webhook`
+    const result = await setWebhook(name, webhookUrl)
+    return NextResponse.json({ success: true, result })
+  }
+
+  return NextResponse.json({ error: 'action inválida' }, { status: 400 })
 }
