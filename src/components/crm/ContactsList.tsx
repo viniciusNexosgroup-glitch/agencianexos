@@ -690,6 +690,23 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     return true
   })
 
+  async function markAllRead() {
+    // Zera localmente de imediato
+    setUnreadMap({})
+    setContacts(prev => prev.map(c => ({ ...c, unread_count: 0 })))
+    // Persiste no banco para cada contato com unread > 0
+    const withUnread = contacts.filter(c => c.unread_count > 0 || (unreadMap[c.id] ?? 0) > 0)
+    await Promise.all(
+      withUnread.map(c =>
+        fetch(`/api/whatsapp/contacts/${c.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'mark_read' }),
+        }).catch(() => {})
+      )
+    )
+  }
+
   function handleSelectContact(contact: Contact) {
     chatContactRef.current = contact
     setChatContact(contact)
@@ -731,6 +748,16 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               WA
             </div>
             <span className="text-white font-semibold flex-1">Conversas</span>
+            {/* Botão marcar todas como lidas */}
+            <button
+              onClick={markAllRead}
+              title="Marcar todas como lidas"
+              className="text-[#8696a0] hover:text-white transition p-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </button>
             {/* Botão importar CSV */}
             <button
               onClick={() => setShowImport(true)}
