@@ -71,6 +71,7 @@ export function FlowBuilder() {
   const [editingFlow, setEditingFlow] = useState<Flow | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -211,6 +212,11 @@ export function FlowBuilder() {
       const d = await res.json()
       if (res.ok) {
         setFlows(fs => fs.map(f => f.id === editingFlow.id ? editingFlow : f))
+        setSuccessMsg('Flow salvo com sucesso!')
+        setTimeout(() => {
+          setSuccessMsg(null)
+          setEditingFlow(null)
+        }, 1500)
       } else {
         setSaveError(d.error ?? `Erro ao salvar (${res.status})`)
       }
@@ -422,15 +428,21 @@ export function FlowBuilder() {
           <div className="bg-red-900/40 border border-red-500/50 rounded-lg px-4 py-3 text-red-300 text-sm">
             <strong>Erro ao salvar:</strong> {saveError}
             {saveError.includes('steps') && (
-              <p className="mt-1 text-red-400 text-xs">Execute no Supabase SQL Editor: <code className="bg-slate-800 px-1 rounded">ALTER TABLE flows ADD COLUMN IF NOT EXISTS steps JSONB DEFAULT '[]'::jsonb;</code></p>
+              <p className="mt-1 text-red-400 text-xs">Execute no Supabase SQL Editor: <code className="bg-slate-800 px-1 rounded">ALTER TABLE flows ADD COLUMN IF NOT EXISTS steps JSONB DEFAULT &apos;[]&apos;::jsonb;</code></p>
             )}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="bg-green-900/40 border border-green-500/50 rounded-lg px-4 py-3 text-green-300 text-sm font-medium">
+            ✓ {successMsg}
           </div>
         )}
 
         <div className="flex justify-end">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !!successMsg}
             className="px-6 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
           >
             {saving ? 'Salvando...' : 'Salvar flow'}
