@@ -137,13 +137,14 @@ export function FlowBuilder() {
   async function handleToggle(flow: Flow) {
     setTogglingId(flow.id)
     try {
-      const newStatus = flow.status === 'active' ? 'inactive' : 'active'
       const res = await fetch(`/api/whatsapp/flows/${flow.id}`, {
-        method: 'PATCH',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ action: 'toggle' }),
       })
       if (res.ok) {
+        const d = await res.json()
+        const newStatus = d.flow?.is_active ? 'active' : 'inactive'
         setFlows(fs => fs.map(f => f.id === flow.id ? { ...f, status: newStatus } : f))
       }
     } finally {

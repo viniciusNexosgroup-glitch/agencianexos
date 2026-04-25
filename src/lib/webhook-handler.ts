@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { fetchGroupInfo, getMediaBase64 } from './evolution'
+import { runFlowsForMessage } from './flow-engine'
 
 function supabase() {
   return createClient(
@@ -247,6 +248,28 @@ export async function processWebhookEvent(body: any) {
       // Incrementa não lidas para qualquer mensagem recebida (individual ou grupo)
       if (!fromMe) {
         await db.rpc('increment_unread_count', { p_instance_name: instance, p_phone: phone })
+      }
+
+      // Executa flows ativos para mensagens recebidas (não grupos, não enviadas por mim)
+      if (!fromMe && !isGroup && !error) {
+        const { data: contactForFlow } = await db
+          .from('whatsapp_contacts')
+          .select('id')
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+          .maybeSingle()
+
+        if (contactForFlow?.id) {
+          // Verifica se é primeira mensagem do contato
+          const { count: msgCount } = await db
+            .from('whatsapp_messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('contact_id', contactForFlow.id)
+
+          const isFirstMessage = (msgCount ?? 0) <= 1
+
+          await runFlowsForMessage(db, instance, remoteJid, contactForFlow.id, text, isFirstMessage)
+        }
       }
 
       if (!error && referral && Object.values(utm).some(v => v !== null)) {

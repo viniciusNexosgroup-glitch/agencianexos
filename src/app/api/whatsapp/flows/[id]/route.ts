@@ -39,46 +39,28 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const { id } = params
   const body = await req.json()
-  const { nodes, edges } = body
-
-  if (!Array.isArray(nodes) || !Array.isArray(edges)) {
-    return NextResponse.json({ error: 'nodes e edges devem ser arrays' }, { status: 400 })
-  }
-
   const db = supabase()
 
   const { data: flow } = await db.from('flows').select('id').eq('id', id).single()
   if (!flow) return NextResponse.json({ error: 'Flow não encontrado' }, { status: 404 })
 
-  await Promise.all([
-    db.from('flow_nodes').delete().eq('flow_id', id),
-    db.from('flow_edges').delete().eq('flow_id', id),
-  ])
+  // Formato do FlowBuilder: salva steps + config diretamente na tabela flows
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (body.name !== undefined) updates.name = body.name
+  if (body.trigger_type !== undefined) updates.trigger_type = body.trigger_type
+  if (body.trigger_value !== undefined) updates.trigger_value = body.trigger_value
+  if (body.steps !== undefined) updates.steps = body.steps
 
-  if (nodes.length > 0) {
-    const { error: nodesError } = await db
-      .from('flow_nodes')
-      .insert(nodes.map((n) => ({ ...n, flow_id: id })))
+  const { data: updated, error } = await db
+    .from('flows')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
 
-    if (nodesError) return NextResponse.json({ error: nodesError.message }, { status: 500 })
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  if (edges.length > 0) {
-    const { error: edgesError } = await db
-      .from('flow_edges')
-      .insert(edges.map((e) => ({ ...e, flow_id: id })))
-
-    if (edgesError) return NextResponse.json({ error: edgesError.message }, { status: 500 })
-  }
-
-  await db.from('flows').update({ updated_at: new Date().toISOString() }).eq('id', id)
-
-  const [{ data: savedNodes }, { data: savedEdges }] = await Promise.all([
-    db.from('flow_nodes').select('*').eq('flow_id', id),
-    db.from('flow_edges').select('*').eq('flow_id', id),
-  ])
-
-  return NextResponse.json({ nodes: savedNodes ?? [], edges: savedEdges ?? [] })
+  return NextResponse.json({ flow: updated })
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
