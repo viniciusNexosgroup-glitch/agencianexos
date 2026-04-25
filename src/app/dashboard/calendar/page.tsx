@@ -24,9 +24,17 @@ type CalEvent = {
   contact_phone?: string | null
   synced_to_google: boolean
   google_event_id?: string | null
+  calendar_id?: string | null
 }
 
 type View = 'month' | 'week'
+
+type GoogleCalendar = {
+  id: string
+  summary: string
+  color: string
+  primary: boolean
+}
 
 const EVENT_COLORS = [
   { label: 'Verde',    value: '#00a884' },
@@ -517,6 +525,8 @@ export default function CalendarPage() {
   const [googleConnected, setGoogleConn]= useState<boolean | null>(null)
   const [modalData, setModalData]       = useState<Partial<CalEvent> & { id?: string } | null>(null)
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null)
+  const [googleCalendars, setGoogleCalendars] = useState<GoogleCalendar[]>([])
+  const [selectedCalIds, setSelectedCalIds]   = useState<string[]>([])
 
   const loadEvents = useCallback(async () => {
     setLoading(true)
@@ -532,7 +542,15 @@ export default function CalendarPage() {
   const checkGoogle = useCallback(async () => {
     const res = await fetch('/api/calendar/status')
     const data = await res.json()
-    setGoogleConn(data.connected ?? false)
+    const connected = data.connected ?? false
+    setGoogleConn(connected)
+    if (connected) {
+      const cRes = await fetch('/api/calendar/calendars')
+      const cData = await cRes.json()
+      const cals: GoogleCalendar[] = cData.calendars ?? []
+      setGoogleCalendars(cals)
+      setSelectedCalIds(cals.map(c => c.id))
+    }
   }, [])
 
   useEffect(() => {
@@ -578,10 +596,20 @@ export default function CalendarPage() {
   }
 
   function openEdit(ev: CalEvent) {
-    if (ev.id.startsWith('google_')) return // eventos do Google são somente leitura
+    if (ev.id.startsWith('google_')) return
     setEditingEvent(ev)
     setModalData(ev)
   }
+
+  function toggleCalendar(id: string) {
+    setSelectedCalIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    )
+  }
+
+  const displayedEvents = selectedCalIds.length === 0
+    ? events
+    : events.filter(ev => !ev.calendar_id || selectedCalIds.includes(ev.calendar_id))
 
   function prev() {
     if (view === 'month') setCurrent(subMonths(current, 1))
@@ -634,7 +662,7 @@ export default function CalendarPage() {
           <div className="w-2 h-2 rounded-full bg-green-500" />
           <p className="text-xs text-green-700 flex-1">Google Agenda conectada — eventos são sincronizados automaticamente.</p>
           <button
-            onClick={async () => { await fetch('/api/calendar/status', { method: 'DELETE' }); setGoogleConn(false) }}
+            onClick={async () => { await fetch('/api/calendar/status', { method: 'DELETE' }); setGoogleConn(false); setGoogleCalendars([]); setSelectedCalIds([]) }}
             className="text-xs text-green-600 hover:text-red-600 transition underline"
           >
             Desconectar
@@ -642,87 +670,129 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200 bg-white flex-shrink-0">
-        {/* Navegação */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={prev}
-            className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
-            </svg>
-          </button>
-          <button
-            onClick={next}
-            className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
-            </svg>
-          </button>
-        </div>
+      {/* Body: sidebar + main */}
+      <div className="flex flex-1 overflow-hidden">
 
-        <h2 className="text-base font-semibold text-gray-800 capitalize flex-1">{periodLabel}</h2>
+        {/* Sidebar de agendas */}
+        {googleConnected === true && googleCalendars.length > 0 && (
+          <aside className="w-52 border-r border-gray-200 bg-white overflow-y-auto flex-shrink-0 py-4">
+            <p className="px-4 text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              Minhas agendas
+            </p>
+            <div className="space-y-0.5 px-2">
+              {googleCalendars.map(cal => (
+                <label
+                  key={cal.id}
+                  className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-gray-50 transition select-none"
+                  onClick={() => toggleCalendar(cal.id)}
+                >
+                  <span
+                    className="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center transition-colors"
+                    style={{
+                      backgroundColor: selectedCalIds.includes(cal.id) ? cal.color : 'transparent',
+                      border: `2px solid ${cal.color}`,
+                    }}
+                  >
+                    {selectedCalIds.includes(cal.id) && (
+                      <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/>
+                      </svg>
+                    )}
+                  </span>
+                  <span className="text-sm text-gray-700 truncate">{cal.summary}</span>
+                </label>
+              ))}
+            </div>
+          </aside>
+        )}
 
-        <button
-          onClick={() => setCurrent(new Date())}
-          className="px-3 py-1.5 text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg transition"
-        >
-          Hoje
-        </button>
+        {/* Main: toolbar + calendário */}
+        <div className="flex-1 flex flex-col overflow-hidden">
 
-        {/* Switch view */}
-        <div className="flex bg-gray-100 rounded-lg p-0.5">
-          {(['month', 'week'] as View[]).map(v => (
+          {/* Toolbar */}
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+            {/* Navegação */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={prev}
+                className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              <button
+                onClick={next}
+                className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </div>
+
+            <h2 className="text-base font-semibold text-gray-800 capitalize flex-1">{periodLabel}</h2>
+
             <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition ${
-                view === v ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
+              onClick={() => setCurrent(new Date())}
+              className="px-3 py-1.5 text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg transition"
             >
-              {v === 'month' ? 'Mês' : 'Semana'}
+              Hoje
             </button>
-          ))}
-        </div>
 
-        {/* Botão novo evento */}
-        <button
-          onClick={() => openCreate(new Date())}
-          className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition shadow-sm"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
-          </svg>
-          Novo evento
-        </button>
-      </div>
+            {/* Switch view */}
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              {(['month', 'week'] as View[]).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition ${
+                    view === v ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {v === 'month' ? 'Mês' : 'Semana'}
+                </button>
+              ))}
+            </div>
 
-      {/* Calendário */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-gray-400">Carregando eventos...</p>
+            {/* Botão novo evento */}
+            <button
+              onClick={() => openCreate(new Date())}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
+              </svg>
+              Novo evento
+            </button>
           </div>
+
+          {/* Calendário */}
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-gray-400">Carregando eventos...</p>
+              </div>
+            </div>
+          ) : view === 'month' ? (
+            <MonthView
+              current={current}
+              events={displayedEvents}
+              onDayClick={openCreate}
+              onEventClick={openEdit}
+            />
+          ) : (
+            <WeekView
+              current={current}
+              events={displayedEvents}
+              onSlotClick={openCreate}
+              onEventClick={openEdit}
+            />
+          )}
+
         </div>
-      ) : view === 'month' ? (
-        <MonthView
-          current={current}
-          events={events}
-          onDayClick={openCreate}
-          onEventClick={openEdit}
-        />
-      ) : (
-        <WeekView
-          current={current}
-          events={events}
-          onSlotClick={openCreate}
-          onEventClick={openEdit}
-        />
-      )}
+      </div>
 
       {/* Modal */}
       {modalData && (

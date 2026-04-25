@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
-import { createGoogleEvent, listGoogleEvents } from '@/lib/google-calendar'
+import { createGoogleEvent, listGoogleEvents, listGoogleCalendars } from '@/lib/google-calendar'
 
 function supabase() {
   return createClient(
@@ -43,8 +43,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ events: localEvents ?? [] })
   }
 
-  // Busca eventos do Google Calendar
-  const googleItems = await listGoogleEvents(session.email, start ?? undefined, end ?? undefined)
+  // Busca lista de calendários do usuário
+  const googleCals = await listGoogleCalendars(session.email)
+  const colorMap: Record<string, string> = {}
+  googleCals.forEach(c => { if (c.id) colorMap[c.id] = c.backgroundColor ?? '#4285f4' })
+  const calIds = googleCals.map(c => c.id).filter(Boolean) as string[]
+
+  // Busca eventos de todos os calendários em paralelo
+  const allCalItems = await Promise.all(
+    calIds.map(async calId => {
+      const items = await listGoogleEvents(session.email, calId, start ?? undefined, end ?? undefined)
+      return items.map(item => ({ ...item, _calendarId: calId, _calendarColor: colorMap[calId] ?? '#4285f4' }))
+    })
+  )
+  const googleItems = allCalItems.flat()
 
   // IDs do Google já salvos localmente (para evitar duplicatas)
   const localGoogleIds = new Set((localEvents ?? []).map(e => e.google_event_id).filter(Boolean))
@@ -61,11 +73,12 @@ export async function GET(req: NextRequest) {
       start_at: item.start?.dateTime ?? `${item.start?.date}T00:00:00.000Z`,
       end_at: item.end?.dateTime ?? `${item.end?.date}T23:59:59.000Z`,
       all_day: !item.start?.dateTime,
-      color: '#4285f4',
+      color: item._calendarColor,
       contact_name: null,
       contact_phone: null,
       synced_to_google: true,
       google_event_id: item.id ?? null,
+      calendar_id: item._calendarId,
     }))
 
   const allEvents = [...(localEvents ?? []), ...googleOnlyEvents]
