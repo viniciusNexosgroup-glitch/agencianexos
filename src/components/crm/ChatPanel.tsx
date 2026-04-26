@@ -678,6 +678,8 @@ export function ChatPanel({
       .subscribe()
 
     // Loop de polling como fallback
+    const POLL_SELECT_FULL = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions, status'
+    const POLL_SELECT_BASE = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions'
     let active = true
     async function pollLoop() {
       while (active) {
@@ -685,12 +687,21 @@ export function ChatPanel({
         if (!active) break
         try {
           const sb2 = createBrowserClient()
-          const { data } = await sb2
+          let { data } = await sb2
             .from('whatsapp_messages')
-            .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions, status')
+            .select(POLL_SELECT_FULL)
             .eq('contact_id', contact.id)
             .order('timestamp', { ascending: true })
             .limit(100)
+          if (!data) {
+            const res = await sb2
+              .from('whatsapp_messages')
+              .select(POLL_SELECT_BASE)
+              .eq('contact_id', contact.id)
+              .order('timestamp', { ascending: true })
+              .limit(100)
+            data = res.data
+          }
           if (data) setMessages(data as Message[])
         } catch { /* silencioso */ }
       }
@@ -768,17 +779,30 @@ export function ChatPanel({
   }, [menuMsgId, reactionMsgId])
 
   async function load() {
+    const supabase = createBrowserClient()
+    const BASE_SELECT = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions'
     try {
-      const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('whatsapp_messages')
-        .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions, status')
+        .select(`${BASE_SELECT}, status`)
         .eq('contact_id', contact.id)
         .order('timestamp', { ascending: true })
         .limit(100)
-      if (error) throw error
-      isAtBottomRef.current = true
-      setMessages(data ?? [])
+      if (error) {
+        // Fallback: coluna status pode não existir ainda (rodar: ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS status INTEGER)
+        const { data: data2, error: error2 } = await supabase
+          .from('whatsapp_messages')
+          .select(BASE_SELECT)
+          .eq('contact_id', contact.id)
+          .order('timestamp', { ascending: true })
+          .limit(100)
+        if (error2) throw error2
+        isAtBottomRef.current = true
+        setMessages(data2 ?? [])
+      } else {
+        isAtBottomRef.current = true
+        setMessages(data ?? [])
+      }
       setLoading(false)
     } catch (err) {
       console.error('[CRM] Erro ao carregar mensagens:', err)
