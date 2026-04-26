@@ -222,16 +222,40 @@ function groupMessagesByDate(messages: Message[]) {
   return groups
 }
 
-function highlightText(text: string, query: string) {
-  if (!query.trim()) return <>{text}</>
-  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+const URL_REGEX = /(https?:\/\/[^\s]+)/gi
+
+function renderMessageText(text: string, query: string) {
+  const segments = text.split(URL_REGEX)
   return (
     <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase()
-          ? <mark key={i} className="bg-yellow-400 text-black rounded-sm px-0.5">{part}</mark>
-          : part
-      )}
+      {segments.map((seg, i) => {
+        if (URL_REGEX.test(seg)) {
+          URL_REGEX.lastIndex = 0
+          return (
+            <a
+              key={i}
+              href={seg}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline text-[#53bdeb] hover:text-[#7dcef5] break-all"
+              onClick={e => e.stopPropagation()}
+            >
+              {seg}
+            </a>
+          )
+        }
+        if (!query.trim()) return <span key={i}>{seg}</span>
+        const parts = seg.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+        return (
+          <span key={i}>
+            {parts.map((part, j) =>
+              part.toLowerCase() === query.toLowerCase()
+                ? <mark key={j} className="bg-yellow-400 text-black rounded-sm px-0.5">{part}</mark>
+                : part
+            )}
+          </span>
+        )
+      })}
     </>
   )
 }
@@ -2606,14 +2630,14 @@ export function ChatPanel({
                      msg.message_type !== 'pollCreationMessage' && (
                       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                         {msg.body
-                          ? (searchQuery ? highlightText(msg.body, searchQuery) : msg.body)
+                          ? renderMessageText(msg.body, searchQuery)
                           : <span className="italic text-[#8696a0] text-xs">[mídia]</span>}
                       </p>
                     )}
 
                     {/* Legenda de imagem/vídeo */}
                     {(msg.message_type === 'imageMessage' || msg.message_type === 'videoMessage') && msg.body && (
-                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed mt-1">{msg.body}</p>
+                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed mt-1">{renderMessageText(msg.body, searchQuery)}</p>
                     )}
 
                     {/* Reações */}
