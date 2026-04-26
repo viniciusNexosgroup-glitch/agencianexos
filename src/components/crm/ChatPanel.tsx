@@ -824,6 +824,7 @@ export function ChatPanel({
   async function handleReact(msg: Message, emoji: string) {
     setReactionMsgId(null)
     setMenuMsgId(null)
+    if (!msg.message_id) return
     const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
     // Optimistic: atualiza reactions localmente
     setMessages(prev => prev.map(m => {
@@ -839,6 +840,7 @@ export function ChatPanel({
         remote_jid: remoteJid,
         message_id: msg.message_id,
         from_me: msg.from_me,
+        participant_jid: msg.participant_jid || null,
         emoji,
       }),
     })
@@ -848,10 +850,19 @@ export function ChatPanel({
     setDeletingMsg(true)
     setDeleteTarget(null)
     setMessages(prev => prev.filter(m => m.id !== msg.id))
+    const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
     await fetch('/api/whatsapp/delete-message', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: msg.id, for_everyone: false }),
+      body: JSON.stringify({
+        id: msg.id,
+        message_id: msg.message_id,
+        instance_name: contact.instance_name,
+        remote_jid: remoteJid,
+        from_me: msg.from_me,
+        // Apagar para mim: se a mensagem foi enviada por mim, remove do WhatsApp também
+        for_everyone: msg.from_me && !!msg.message_id,
+      }),
     })
     setDeletingMsg(false)
   }

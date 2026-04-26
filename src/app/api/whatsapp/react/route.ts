@@ -15,16 +15,19 @@ export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { instance_name, remote_jid, message_id, from_me, emoji } = await req.json()
+  const { instance_name, remote_jid, message_id, from_me, participant_jid, emoji } = await req.json()
   if (!instance_name || !remote_jid || !message_id || !emoji) {
     return NextResponse.json({ error: 'Parâmetros obrigatórios faltando' }, { status: 400 })
   }
 
-  const result = await sendReaction(
-    instance_name,
-    { remoteJid: remote_jid, fromMe: from_me ?? false, id: message_id },
-    emoji
-  )
+  const key: { remoteJid: string; fromMe: boolean; id: string; participant?: string } = {
+    remoteJid: remote_jid,
+    fromMe: from_me ?? false,
+    id: message_id,
+  }
+  if (participant_jid) key.participant = participant_jid
+
+  const result = await sendReaction(instance_name, key, emoji)
 
   // Atualiza reactions localmente no banco
   const db = supabase()

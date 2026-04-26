@@ -143,7 +143,7 @@ export async function findMessageById(instanceName: string, remoteJid: string, m
 
 export async function sendReaction(
   instanceName: string,
-  key: { remoteJid: string; fromMe: boolean; id: string },
+  key: { remoteJid: string; fromMe: boolean; id: string; participant?: string },
   emoji: string
 ) {
   const res = await fetch(`${BASE_URL}/message/sendReaction/${instanceName}`, {
