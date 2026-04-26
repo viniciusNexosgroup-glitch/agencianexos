@@ -10,8 +10,9 @@ import { FlowBuilder } from '@/components/crm/FlowBuilder'
 import { AIAgentManager } from '@/components/crm/AIAgentManager'
 import { DepartmentManager } from '@/components/crm/DepartmentManager'
 import { HSMTemplates } from '@/components/crm/HSMTemplates'
+import { FollowUpManager } from '@/components/crm/FollowUpManager'
 
-type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia' | 'departamentos' | 'templates'
+type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia' | 'departamentos' | 'templates' | 'followup'
 
 function supabase() {
   return createClient(
@@ -67,6 +68,9 @@ export default async function CrmPage({ searchParams }: { searchParams: { tab?: 
         )}
         {tab === 'templates' && (
           <HSMTemplates />
+        )}
+        {tab === 'followup' && (
+          <FollowUpManager />
         )}
       </div>
     </div>

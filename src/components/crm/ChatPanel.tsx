@@ -631,6 +631,13 @@ export function ChatPanel({
   const [iSections, setISections] = useState<InteractiveSection[]>([{ title: '', rows: [{ id: '1', title: '' }] }])
   const [sendingInteractive, setSendingInteractive] = useState(false)
 
+  // Sidebar de templates
+  const [templatesSidebar, setTemplatesSidebar] = useState(false)
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [templateVideoId, setTemplateVideoId] = useState<string | null>(null)
+  const [templateVideoUrl, setTemplateVideoUrl] = useState('')
+  const [sendingTemplateVideo, setSendingTemplateVideo] = useState(false)
+
   // Gerenciador de respostas rápidas
   const [showQRManager, setShowQRManager] = useState(false)
   const [newQRTab, setNewQRTab] = useState<'text' | 'audio'>('text')
@@ -1842,6 +1849,126 @@ export function ChatPanel({
         </div>
       )}
 
+      {/* ── Sidebar de templates ── */}
+      {templatesSidebar && (
+        <div className="absolute right-0 top-0 bottom-0 w-72 bg-[#111b21] border-l border-[#222e35] z-20 flex flex-col shadow-2xl">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-[#202c33] flex-shrink-0">
+            <span className="text-white font-medium text-sm">Templates</span>
+            <button onClick={() => setTemplatesSidebar(false)} className="text-[#8696a0] hover:text-white transition">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Busca */}
+          <div className="px-3 py-2 flex-shrink-0 border-b border-[#222e35]">
+            <div className="flex items-center bg-[#202c33] rounded-lg px-2 gap-2">
+              <svg className="w-3.5 h-3.5 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                value={templateSearch}
+                onChange={e => setTemplateSearch(e.target.value)}
+                placeholder="Buscar template..."
+                className="flex-1 bg-transparent text-white text-xs py-1.5 outline-none placeholder-[#8696a0]"
+              />
+            </div>
+          </div>
+
+          {/* Lista */}
+          <div className="flex-1 overflow-y-auto py-1">
+            {quickReplies
+              .filter(q => !templateSearch || q.shortcut.includes(templateSearch) || q.content.toLowerCase().includes(templateSearch.toLowerCase()))
+              .map(qr => (
+                <div key={qr.id} className="px-3 py-2 border-b border-[#222e35]/60 hover:bg-[#202c33] transition">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-mono bg-[#2a3942] text-[#00a884] px-1.5 py-0.5 rounded flex-shrink-0">
+                      {qr.shortcut}
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => { selectQuickReply(qr); setTemplatesSidebar(false) }}
+                        className="text-[10px] bg-[#00a884] hover:bg-[#06cf9c] text-white px-2 py-0.5 rounded transition font-medium"
+                      >
+                        Enviar
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTemplateVideoId(templateVideoId === qr.id ? null : qr.id)
+                          setTemplateVideoUrl('')
+                        }}
+                        title="Enviar com vídeo"
+                        className={`text-[10px] px-2 py-0.5 rounded transition font-medium ${templateVideoId === qr.id ? 'bg-indigo-600 text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'}`}
+                      >
+                        + Vídeo
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[#8696a0] text-[11px] leading-relaxed line-clamp-2">{qr.content}</p>
+
+                  {/* Mini-form de vídeo */}
+                  {templateVideoId === qr.id && (
+                    <div className="mt-2 flex gap-1.5">
+                      <input
+                        value={templateVideoUrl}
+                        onChange={e => setTemplateVideoUrl(e.target.value)}
+                        placeholder="URL do vídeo (mp4, drive...)"
+                        className="flex-1 bg-[#202c33] text-[#e9edef] text-[10px] rounded px-2 py-1 outline-none border border-[#3d4f5a] focus:border-indigo-500 placeholder-[#8696a0]"
+                      />
+                      <button
+                        disabled={!templateVideoUrl.trim() || sendingTemplateVideo}
+                        onClick={async () => {
+                          if (!templateVideoUrl.trim()) return
+                          setSendingTemplateVideo(true)
+                          // Envia a mensagem de texto primeiro
+                          if (qr.content.trim()) {
+                            await fetch('/api/whatsapp/send', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                instanceName: contact.instance_name,
+                                phone: contact.phone,
+                                message: qr.content,
+                                contactId: contact.id,
+                              }),
+                            }).catch(() => {})
+                          }
+                          // Depois envia o vídeo
+                          await fetch('/api/whatsapp/send-media', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              instanceName: contact.instance_name,
+                              phone: contact.phone,
+                              mediatype: 'video',
+                              mimetype: 'video/mp4',
+                              media: templateVideoUrl.trim(),
+                              contactId: contact.id,
+                            }),
+                          }).catch(() => {})
+                          setSendingTemplateVideo(false)
+                          setTemplateVideoId(null)
+                          setTemplateVideoUrl('')
+                        }}
+                        className="text-[10px] bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-2 py-1 rounded transition"
+                      >
+                        {sendingTemplateVideo ? '...' : 'OK'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            {quickReplies.length === 0 && (
+              <p className="text-[#8696a0] text-xs text-center py-6 px-4 italic">
+                Nenhum template criado ainda
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Gerenciador de respostas rápidas ── */}
       {showQRManager && (
         <div className="absolute inset-0 bg-[#0b141a] z-30 flex flex-col">
@@ -2263,6 +2390,17 @@ export function ChatPanel({
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+
+        {/* Botão sidebar de templates */}
+        <button
+          onClick={() => { setTemplatesSidebar(v => !v); if (quickReplies.length === 0) loadQuickReplies() }}
+          title="Templates"
+          className={`p-1.5 rounded-full transition ${templatesSidebar ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
         </button>
 

@@ -470,6 +470,14 @@ export function KanbanBoard({ stages, leads: initialLeads, contacts, onChat, onL
 
   useEffect(() => { setLeads(initialLeads) }, [initialLeads])
 
+  useEffect(() => {
+    function handler(e: Event) {
+      setNewLeadStageId((e as CustomEvent<string>).detail)
+    }
+    document.addEventListener('kanban:newlead', handler)
+    return () => document.removeEventListener('kanban:newlead', handler)
+  }, [])
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const activeLead = leads.find(l => l.id === activeId) ?? null
 
