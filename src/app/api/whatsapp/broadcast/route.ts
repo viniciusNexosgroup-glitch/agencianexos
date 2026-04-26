@@ -80,7 +80,6 @@ export async function POST(req: NextRequest) {
       name,
       body: messageBody,
       instance_name,
-      tag_ids: tag_ids ?? null,
       total_recipients: totalRecipients,
       status: 'draft',
       created_by: session.sub,
