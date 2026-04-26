@@ -130,6 +130,28 @@ const NAV = [
       </svg>
     ),
   },
+  {
+    label: 'Follow-up',
+    href: '/dashboard/crm?tab=followup',
+    matchHref: '/dashboard/crm',
+    matchTab: 'followup',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+        <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    ),
+  },
+  {
+    label: 'Biblioteca',
+    href: '/dashboard/crm?tab=biblioteca',
+    matchHref: '/dashboard/crm',
+    matchTab: 'biblioteca',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+        <path d="M15 10l4.553-2.277A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+      </svg>
+    ),
+  },
 
   {
     label: 'Admin',
