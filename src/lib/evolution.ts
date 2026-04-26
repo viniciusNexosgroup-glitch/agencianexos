@@ -19,6 +19,27 @@ export async function createInstance(name: string) {
   return res.json()
 }
 
+export async function createCloudApiInstance(
+  name: string,
+  token: string,
+  phoneNumberId: string,
+  wabaId?: string
+) {
+  const body: Record<string, unknown> = {
+    instanceName: name,
+    integration: 'WHATSAPP-BUSINESS',
+    token,
+    phone_number_id: phoneNumberId,
+  }
+  if (wabaId) body.business_id = wabaId
+  const res = await fetch(`${BASE_URL}/instance/create`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}
+
 export async function getInstanceStatus(name: string) {
   const res = await fetch(`${BASE_URL}/instance/connectionState/${name}`, {
     headers: headers(),

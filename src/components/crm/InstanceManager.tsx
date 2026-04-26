@@ -8,6 +8,9 @@ type Instance = {
   label: string
   status: 'connected' | 'disconnected'
   created_at: string
+  provider?: 'baileys' | 'cloud_api' | null
+  phone_number_id?: string | null
+  waba_id?: string | null
 }
 
 type DayConfig = {
@@ -222,7 +225,27 @@ function InstanceCard({ instance, onDelete, initialQr }: { instance: Instance; o
         </div>
       </div>
 
-      {status === 'disconnected' && (
+      {/* Cloud API: não tem QR, conexão é via token */}
+      {instance.provider === 'cloud_api' && (
+        <div className="mt-3 bg-blue-950/40 border border-blue-800/40 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+            </svg>
+            <span className="text-blue-300 text-xs font-medium">API Oficial do WhatsApp (Cloud API)</span>
+          </div>
+          {instance.phone_number_id && (
+            <p className="text-slate-400 text-xs">Phone Number ID: <span className="text-slate-300 font-mono">{instance.phone_number_id}</span></p>
+          )}
+          {instance.waba_id && (
+            <p className="text-slate-400 text-xs mt-0.5">WABA ID: <span className="text-slate-300 font-mono">{instance.waba_id}</span></p>
+          )}
+          <p className="text-slate-500 text-[10px] mt-2">Configure o webhook no Meta Business Manager apontando para sua instância Evolution API.</p>
+        </div>
+      )}
+
+      {/* Baileys: QR code */}
+      {instance.provider !== 'cloud_api' && status === 'disconnected' && (
         <div className="mt-3">
           {qr ? (
             <div className="flex flex-col items-center gap-2">
@@ -397,9 +420,16 @@ export function InstanceManager() {
   const [instances, setInstances] = useState<Instance[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [pendingQr, setPendingQr] = useState<{ instanceName: string; qr: string } | null>(null)
+
+  // Campos do formulário
+  const [formProvider, setFormProvider] = useState<'baileys' | 'cloud_api'>('baileys')
+  const [formName, setFormName] = useState('')
+  const [formToken, setFormToken] = useState('')
+  const [formPhoneId, setFormPhoneId] = useState('')
+  const [formWabaId, setFormWabaId] = useState('')
+  const [formError, setFormError] = useState('')
 
   async function load() {
     const res = await fetch('/api/whatsapp/instance')
@@ -410,20 +440,43 @@ export function InstanceManager() {
 
   useEffect(() => { load() }, [])
 
+  function resetForm() {
+    setFormName('')
+    setFormToken('')
+    setFormPhoneId('')
+    setFormWabaId('')
+    setFormError('')
+    setShowForm(false)
+  }
+
   async function create() {
-    if (!newName.trim()) return
+    if (!formName.trim()) return
+    if (formProvider === 'cloud_api' && (!formToken.trim() || !formPhoneId.trim())) {
+      setFormError('Token de Acesso e Phone Number ID são obrigatórios.')
+      return
+    }
     setCreating(true)
+    setFormError('')
+    const body: Record<string, string> = { name: formName, label: formName, provider: formProvider }
+    if (formProvider === 'cloud_api') {
+      body.token = formToken
+      body.phoneNumberId = formPhoneId
+      if (formWabaId.trim()) body.wabaId = formWabaId
+    }
     const res = await fetch('/api/whatsapp/instance', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName, label: newName }),
+      body: JSON.stringify(body),
     })
     const data = await res.json()
-    setNewName('')
-    setShowForm(false)
+    if (data.error) {
+      setFormError(data.error)
+      setCreating(false)
+      return
+    }
+    resetForm()
     setCreating(false)
     await load()
-    // Se já veio QR na criação, define no card correto via estado global temporário
     if (data.qrBase64) {
       setPendingQr({ instanceName: data.instanceName, qr: data.qrBase64 })
     }
@@ -444,21 +497,85 @@ export function InstanceManager() {
       </div>
 
       {showForm && (
-        <div className="mb-4 bg-slate-900 border border-slate-700 rounded-xl p-4 flex gap-3">
+        <div className="mb-4 bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3">
+          {/* Seleção de provedor */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFormProvider('baileys')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition ${
+                formProvider === 'baileys'
+                  ? 'bg-green-700 border-green-600 text-white'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+              WhatsApp Web (QR Code)
+            </button>
+            <button
+              onClick={() => setFormProvider('cloud_api')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition ${
+                formProvider === 'cloud_api'
+                  ? 'bg-blue-700 border-blue-600 text-white'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+              API Oficial (Business)
+            </button>
+          </div>
+
+          {/* Nome da instância */}
           <input
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            placeholder="Nome da instância (ex: cliente-joao)"
-            className="flex-1 bg-slate-800 text-white text-sm rounded-lg px-3 py-2 outline-none border border-slate-700 focus:border-indigo-500 transition placeholder-slate-500"
-            onKeyDown={e => { if (e.key === 'Enter') create() }}
+            value={formName}
+            onChange={e => setFormName(e.target.value)}
+            placeholder="Nome da instância (ex: minha-empresa)"
+            className="w-full bg-slate-800 text-white text-sm rounded-lg px-3 py-2 outline-none border border-slate-700 focus:border-indigo-500 transition placeholder-slate-500"
+            onKeyDown={e => { if (e.key === 'Enter' && formProvider === 'baileys') create() }}
           />
-          <button
-            onClick={create}
-            disabled={creating || !newName.trim()}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm px-4 py-2 rounded-lg transition"
-          >
-            {creating ? 'Criando...' : 'Criar'}
-          </button>
+
+          {/* Campos específicos da API Oficial */}
+          {formProvider === 'cloud_api' && (
+            <div className="space-y-2 p-3 bg-blue-950/30 border border-blue-800/40 rounded-lg">
+              <p className="text-blue-300 text-xs font-medium mb-2">Credenciais do Meta Business</p>
+              <input
+                value={formToken}
+                onChange={e => setFormToken(e.target.value)}
+                placeholder="Token de Acesso Permanente *"
+                className="w-full bg-slate-800 text-white text-sm rounded-lg px-3 py-2 outline-none border border-slate-700 focus:border-blue-500 transition placeholder-slate-500"
+              />
+              <input
+                value={formPhoneId}
+                onChange={e => setFormPhoneId(e.target.value)}
+                placeholder="Phone Number ID *"
+                className="w-full bg-slate-800 text-white text-sm rounded-lg px-3 py-2 outline-none border border-slate-700 focus:border-blue-500 transition placeholder-slate-500"
+              />
+              <input
+                value={formWabaId}
+                onChange={e => setFormWabaId(e.target.value)}
+                placeholder="WhatsApp Business Account ID (opcional)"
+                className="w-full bg-slate-800 text-white text-sm rounded-lg px-3 py-2 outline-none border border-slate-700 focus:border-blue-500 transition placeholder-slate-500"
+              />
+              <p className="text-slate-500 text-[10px]">Encontre esses dados em: Meta Business Suite → WhatsApp Manager → Configurações da API</p>
+            </div>
+          )}
+
+          {formError && <p className="text-red-400 text-xs">{formError}</p>}
+
+          <div className="flex gap-2">
+            <button
+              onClick={resetForm}
+              className="px-4 py-2 text-slate-400 hover:text-white border border-slate-700 rounded-lg text-sm transition"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={create}
+              disabled={creating || !formName.trim()}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm px-4 py-2 rounded-lg transition font-medium"
+            >
+              {creating ? 'Criando...' : 'Criar Instância'}
+            </button>
+          </div>
         </div>
       )}
 
