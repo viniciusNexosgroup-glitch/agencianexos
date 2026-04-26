@@ -95,7 +95,7 @@ function TagBadge({ tag, onRemove }: { tag: Tag; onRemove?: () => void }) {
 
 // ─── TagDropdown (para o header do chat) ──────────────────────────────────────
 
-function TagDropdown({ contactId, onClose }: { contactId: string; onClose: () => void }) {
+function TagDropdown({ contactId, onClose, onTagsChange }: { contactId: string; onClose: () => void; onTagsChange?: (tags: Tag[]) => void }) {
   const [allTags, setAllTags] = useState<Tag[]>([])
   const [contactTags, setContactTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
@@ -127,21 +127,24 @@ function TagDropdown({ contactId, onClose }: { contactId: string; onClose: () =>
 
   async function toggleTag(tag: Tag) {
     const has = contactTags.some(t => t.id === tag.id)
+    let updated: Tag[]
     if (has) {
       await fetch(`/api/whatsapp/contacts/${contactId}/tags`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tag_id: tag.id }),
       })
-      setContactTags(prev => prev.filter(t => t.id !== tag.id))
+      updated = contactTags.filter(t => t.id !== tag.id)
     } else {
       await fetch(`/api/whatsapp/contacts/${contactId}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tag_id: tag.id }),
       })
-      setContactTags(prev => [...prev, tag])
+      updated = [...contactTags, tag]
     }
+    setContactTags(updated)
+    onTagsChange?.(updated)
   }
 
   return (
@@ -423,17 +426,16 @@ function ChatPanelWithTags({
   onClose,
   funnels,
   onOpenContact,
+  onContactTagsChange,
 }: {
   contact: Contact
   onClose: () => void
   funnels: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
   onOpenContact?: (phone: string, instanceName: string) => void
+  onContactTagsChange?: (contactId: string, tags: Tag[]) => void
 }) {
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
 
-  // Injeta o botão de tag no header via um portal-like approach:
-  // Renderizamos o ChatPanel normalmente e adicionamos o dropdown de tag
-  // sobreposto ao header com posição absoluta.
   return (
     <div className="flex flex-col h-full relative">
       {/* Botão de tag flutuante sobre o header */}
@@ -444,7 +446,6 @@ function ChatPanelWithTags({
             title="Gerenciar tags do contato"
             className="flex items-center justify-center w-8 h-8 rounded-full text-[#8696a0] hover:text-white hover:bg-[#3d4f5a] transition"
           >
-            {/* Ícone de etiqueta */}
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
@@ -458,6 +459,7 @@ function ChatPanelWithTags({
             <TagDropdown
               contactId={contact.id}
               onClose={() => setTagDropdownOpen(false)}
+              onTagsChange={tags => onContactTagsChange?.(contact.id, tags)}
             />
           )}
         </div>
@@ -513,7 +515,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   async function fetchContacts() {
     const { data } = await createBrowserClient()
       .from('whatsapp_contacts')
-      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url')
+      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url, contact_tags(tags(id, name, color))')
       .not('phone', 'like', '%@lid')
       .not('phone', 'eq', 'status@broadcast')
       .order('last_message_at', { ascending: false })
@@ -522,10 +524,16 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
 
   function applyContacts(raw: any[]) {
     const currentId = chatContactRef.current?.id
-    const list: Contact[] = raw.map((c: any) => ({
-      ...c,
-      unread_count: Number(c.unread_count ?? 0),
-    }))
+    const tagsMap: Record<string, Tag[]> = {}
+    const list: Contact[] = raw.map((c: any) => {
+      // Extrai tags do join e popula o mapa
+      const tags: Tag[] = (c.contact_tags ?? [])
+        .map((ct: any) => ct.tags)
+        .filter(Boolean)
+      tagsMap[c.id] = tags
+      const { contact_tags: _ct, ...rest } = c
+      return { ...rest, unread_count: Number(c.unread_count ?? 0) }
+    })
     const merged = list.map(c =>
       currentId && c.id === currentId ? { ...c, unread_count: 0 } : c
     )
@@ -535,6 +543,8 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
       return tb - ta
     })
     setContacts(merged)
+    // Atualiza o mapa de tags sem sobrescrever entradas mais recentes (ex: edição via modal)
+    setContactTagsMap(prev => ({ ...prev, ...tagsMap }))
   }
 
   async function load() {
@@ -649,10 +659,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     }
   }, [])
 
-  // Carrega tags dos contatos visíveis quando lista muda
-  useEffect(() => {
-    contacts.forEach(c => fetchContactTags(c.id))
-  }, [contacts])
+  // fetchContactTags mantido para atualização individual após edição no modal
 
   function saveCurrentFilter() {
     if (!filterName.trim()) return
@@ -965,6 +972,9 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               onClose={() => { chatContactRef.current = null; setChatContact(null) }}
               funnels={funnels}
               onOpenContact={handleOpenContact}
+              onContactTagsChange={(contactId, tags) =>
+                setContactTagsMap(prev => ({ ...prev, [contactId]: tags }))
+              }
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
@@ -990,7 +1000,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
       {showTagManager && (
         <TagManagerModal
           onClose={() => setShowTagManager(false)}
-          onTagsChanged={() => { fetchTags(); setContactTagsMap({}) }}
+          onTagsChanged={() => { fetchTags(); load() }}
         />
       )}
     </>

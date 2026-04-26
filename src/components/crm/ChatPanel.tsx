@@ -710,7 +710,8 @@ export function ChatPanel({
               .eq('contact_id', contact.id)
               .order('timestamp', { ascending: true })
               .limit(100)
-            data = res.data
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            data = res.data as any
           }
           if (data) setMessages(data as Message[])
         } catch { /* silencioso */ }
