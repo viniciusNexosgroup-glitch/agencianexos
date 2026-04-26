@@ -46,6 +46,12 @@ type QuickReply = {
   type: 'text' | 'audio'
 }
 
+type VideoCategory = {
+  id: string
+  name: string
+  videos: { id: string; name: string; url: string }[]
+}
+
 type ScheduledMessage = {
   id: string
   body: string
@@ -631,12 +637,12 @@ export function ChatPanel({
   const [iSections, setISections] = useState<InteractiveSection[]>([{ title: '', rows: [{ id: '1', title: '' }] }])
   const [sendingInteractive, setSendingInteractive] = useState(false)
 
-  // Sidebar de templates
-  const [templatesSidebar, setTemplatesSidebar] = useState(false)
-  const [templateSearch, setTemplateSearch] = useState('')
-  const [templateVideoId, setTemplateVideoId] = useState<string | null>(null)
-  const [templateVideoUrl, setTemplateVideoUrl] = useState('')
-  const [sendingTemplateVideo, setSendingTemplateVideo] = useState(false)
+  // Biblioteca de vídeos (sidebar)
+  const [libSidebar, setLibSidebar] = useState(false)
+  const [libCategories, setLibCategories] = useState<VideoCategory[]>([])
+  const [libSearch, setLibSearch] = useState('')
+  const [libExpanded, setLibExpanded] = useState<Set<string>>(new Set())
+  const [sendingVideo, setSendingVideo] = useState<string | null>(null)
 
   // Gerenciador de respostas rápidas
   const [showQRManager, setShowQRManager] = useState(false)
@@ -1150,6 +1156,13 @@ export function ChatPanel({
       setQrLoading(false)
     }
   }
+
+  useEffect(() => {
+    fetch('/api/whatsapp/video-library')
+      .then(r => r.json())
+      .then(d => setLibCategories(d.categories ?? []))
+      .catch(() => {})
+  }, [])
 
   async function loadScheduled() {
     setLoadingScheduled(true)
@@ -1849,126 +1862,6 @@ export function ChatPanel({
         </div>
       )}
 
-      {/* ── Sidebar de templates ── */}
-      {templatesSidebar && (
-        <div className="absolute right-0 top-0 bottom-0 w-72 bg-[#111b21] border-l border-[#222e35] z-20 flex flex-col shadow-2xl">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-[#202c33] flex-shrink-0">
-            <span className="text-white font-medium text-sm">Templates</span>
-            <button onClick={() => setTemplatesSidebar(false)} className="text-[#8696a0] hover:text-white transition">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Busca */}
-          <div className="px-3 py-2 flex-shrink-0 border-b border-[#222e35]">
-            <div className="flex items-center bg-[#202c33] rounded-lg px-2 gap-2">
-              <svg className="w-3.5 h-3.5 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                value={templateSearch}
-                onChange={e => setTemplateSearch(e.target.value)}
-                placeholder="Buscar template..."
-                className="flex-1 bg-transparent text-white text-xs py-1.5 outline-none placeholder-[#8696a0]"
-              />
-            </div>
-          </div>
-
-          {/* Lista */}
-          <div className="flex-1 overflow-y-auto py-1">
-            {quickReplies
-              .filter(q => !templateSearch || q.shortcut.includes(templateSearch) || q.content.toLowerCase().includes(templateSearch.toLowerCase()))
-              .map(qr => (
-                <div key={qr.id} className="px-3 py-2 border-b border-[#222e35]/60 hover:bg-[#202c33] transition">
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <span className="text-[10px] font-mono bg-[#2a3942] text-[#00a884] px-1.5 py-0.5 rounded flex-shrink-0">
-                      {qr.shortcut}
-                    </span>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => { selectQuickReply(qr); setTemplatesSidebar(false) }}
-                        className="text-[10px] bg-[#00a884] hover:bg-[#06cf9c] text-white px-2 py-0.5 rounded transition font-medium"
-                      >
-                        Enviar
-                      </button>
-                      <button
-                        onClick={() => {
-                          setTemplateVideoId(templateVideoId === qr.id ? null : qr.id)
-                          setTemplateVideoUrl('')
-                        }}
-                        title="Enviar com vídeo"
-                        className={`text-[10px] px-2 py-0.5 rounded transition font-medium ${templateVideoId === qr.id ? 'bg-indigo-600 text-white' : 'bg-[#2a3942] text-[#8696a0] hover:text-white'}`}
-                      >
-                        + Vídeo
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-[#8696a0] text-[11px] leading-relaxed line-clamp-2">{qr.content}</p>
-
-                  {/* Mini-form de vídeo */}
-                  {templateVideoId === qr.id && (
-                    <div className="mt-2 flex gap-1.5">
-                      <input
-                        value={templateVideoUrl}
-                        onChange={e => setTemplateVideoUrl(e.target.value)}
-                        placeholder="URL do vídeo (mp4, drive...)"
-                        className="flex-1 bg-[#202c33] text-[#e9edef] text-[10px] rounded px-2 py-1 outline-none border border-[#3d4f5a] focus:border-indigo-500 placeholder-[#8696a0]"
-                      />
-                      <button
-                        disabled={!templateVideoUrl.trim() || sendingTemplateVideo}
-                        onClick={async () => {
-                          if (!templateVideoUrl.trim()) return
-                          setSendingTemplateVideo(true)
-                          // Envia a mensagem de texto primeiro
-                          if (qr.content.trim()) {
-                            await fetch('/api/whatsapp/send', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                instanceName: contact.instance_name,
-                                phone: contact.phone,
-                                message: qr.content,
-                                contactId: contact.id,
-                              }),
-                            }).catch(() => {})
-                          }
-                          // Depois envia o vídeo
-                          await fetch('/api/whatsapp/send-media', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              instanceName: contact.instance_name,
-                              phone: contact.phone,
-                              mediatype: 'video',
-                              mimetype: 'video/mp4',
-                              media: templateVideoUrl.trim(),
-                              contactId: contact.id,
-                            }),
-                          }).catch(() => {})
-                          setSendingTemplateVideo(false)
-                          setTemplateVideoId(null)
-                          setTemplateVideoUrl('')
-                        }}
-                        className="text-[10px] bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-2 py-1 rounded transition"
-                      >
-                        {sendingTemplateVideo ? '...' : 'OK'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            {quickReplies.length === 0 && (
-              <p className="text-[#8696a0] text-xs text-center py-6 px-4 italic">
-                Nenhum template criado ainda
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Gerenciador de respostas rápidas ── */}
       {showQRManager && (
         <div className="absolute inset-0 bg-[#0b141a] z-30 flex flex-col">
@@ -2255,6 +2148,8 @@ export function ChatPanel({
         </div>
       )}
 
+      <div className="flex flex-1 overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-2 bg-[#202c33] flex-shrink-0">
         <button
@@ -2393,11 +2288,11 @@ export function ChatPanel({
           </svg>
         </button>
 
-        {/* Botão sidebar de templates */}
+        {/* Botão biblioteca de vídeos */}
         <button
-          onClick={() => { setTemplatesSidebar(v => !v); if (quickReplies.length === 0) loadQuickReplies() }}
-          title="Templates"
-          className={`p-1.5 rounded-full transition ${templatesSidebar ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+          onClick={() => setLibSidebar(v => !v)}
+          title="Biblioteca de Vídeos"
+          className={`p-1.5 rounded-full transition ${libSidebar ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -3223,6 +3118,100 @@ export function ChatPanel({
             )}
           </div>
         )}
+      </div>
+      </div>
+
+      {libSidebar && (
+      <div className="w-72 flex-shrink-0 border-l border-[#222e35] bg-[#111b21] flex flex-col overflow-hidden">
+        {/* Cabeçalho */}
+        <div className="flex items-center justify-between px-4 py-3 bg-[#202c33] flex-shrink-0 border-b border-[#222e35]">
+          <span className="text-white font-medium text-sm">Biblioteca de Vídeos</span>
+          <button onClick={() => setLibSidebar(false)} className="text-[#8696a0] hover:text-white transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {/* Busca */}
+        <div className="px-3 py-2 flex-shrink-0 border-b border-[#222e35]">
+          <div className="flex items-center bg-[#202c33] rounded-lg px-2 gap-2">
+            <svg className="w-3.5 h-3.5 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              value={libSearch}
+              onChange={e => setLibSearch(e.target.value)}
+              placeholder="Buscar categoria ou vídeo..."
+              className="flex-1 bg-transparent text-white text-xs py-1.5 outline-none placeholder-[#8696a0]"
+            />
+          </div>
+        </div>
+        {/* Lista de categorias */}
+        <div className="flex-1 overflow-y-auto">
+          {libCategories.length === 0 && (
+            <p className="text-[#8696a0] text-xs text-center py-6 italic px-4">
+              Nenhuma categoria criada. Vá em CRM → Biblioteca para adicionar.
+            </p>
+          )}
+          {libCategories
+            .filter(cat => !libSearch || cat.name.toLowerCase().includes(libSearch.toLowerCase()) || cat.videos.some(v => v.name.toLowerCase().includes(libSearch.toLowerCase())))
+            .map(cat => (
+              <div key={cat.id}>
+                <button
+                  onClick={() => setLibExpanded(prev => {
+                    const next = new Set(prev)
+                    next.has(cat.id) ? next.delete(cat.id) : next.add(cat.id)
+                    return next
+                  })}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-[#202c33] transition text-left"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-[#8696a0] flex-shrink-0 transition-transform"
+                    style={{ transform: libExpanded.has(cat.id) ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="flex-1 text-sm text-white font-medium">{cat.name}</span>
+                  <span className="text-[#8696a0] text-xs">{cat.videos.length}</span>
+                </button>
+                {libExpanded.has(cat.id) && cat.videos
+                  .filter(v => !libSearch || v.name.toLowerCase().includes(libSearch.toLowerCase()))
+                  .map(vid => (
+                    <div key={vid.id} className="flex items-center gap-2 pl-8 pr-3 py-2 hover:bg-[#202c33] transition border-t border-[#222e35]/40">
+                      <svg className="w-3.5 h-3.5 text-[#8696a0] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.277A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                      </svg>
+                      <span className="flex-1 text-xs text-[#e9edef] truncate">{vid.name}</span>
+                      <button
+                        onClick={() => {
+                          setSendingVideo(vid.id)
+                          fetch('/api/whatsapp/send-media', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              instanceName: contact.instance_name,
+                              phone: contact.phone,
+                              mediatype: 'video',
+                              mimetype: 'video/mp4',
+                              media: vid.url,
+                              caption: vid.name,
+                              contactId: contact.id,
+                            }),
+                          }).catch(() => {}).finally(() => setSendingVideo(null))
+                        }}
+                        disabled={sendingVideo === vid.id}
+                        className="text-[10px] bg-[#00a884] hover:bg-[#06cf9c] disabled:opacity-50 text-white px-2 py-1 rounded transition font-medium flex-shrink-0"
+                      >
+                        {sendingVideo === vid.id ? '...' : 'Enviar'}
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            ))}
+        </div>
+      </div>
+      )}
       </div>
     </div>
   )
