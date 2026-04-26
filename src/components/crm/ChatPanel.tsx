@@ -16,6 +16,7 @@ type Message = {
   media_url?: string | null
   media_data?: unknown | null
   reactions?: Record<string, string> | null
+  status?: number | null
 }
 
 type Contact = {
@@ -79,6 +80,58 @@ function getInitials(name: string) {
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
+// Status: 0=erro 1=pendente 2=enviado(server) 3=entregue 4=lido 5=reproduzido(áudio)
+function MsgStatus({ status }: { status?: number | null }) {
+  const blue = '#53bdeb'
+  const gray = '#8aaabf'
+
+  // Lido / Reproduzido → duplo check azul
+  if (status === 4 || status === 5) {
+    return (
+      <svg className="inline-block ml-1 flex-shrink-0" width="18" height="12" viewBox="0 0 18 12" fill={blue}>
+        <path d="M17.394 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z"/>
+        <path d="M12.334 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z" opacity=".5"/>
+      </svg>
+    )
+  }
+
+  // Entregue → duplo check cinza
+  if (status === 3) {
+    return (
+      <svg className="inline-block ml-1 flex-shrink-0" width="18" height="12" viewBox="0 0 18 12" fill={gray}>
+        <path d="M17.394 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z"/>
+        <path d="M12.334 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z" opacity=".5"/>
+      </svg>
+    )
+  }
+
+  // Enviado ao servidor → check simples cinza
+  if (status === 2) {
+    return (
+      <svg className="inline-block ml-1 flex-shrink-0" width="12" height="12" viewBox="0 0 12 12" fill={gray}>
+        <path d="M11.394 1.556a.75.75 0 0 0-1.06-1.06l-6.07 6.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l6.601-6.6z"/>
+      </svg>
+    )
+  }
+
+  // Pendente → relógio
+  if (status === 1) {
+    return (
+      <svg className="inline-block ml-1 flex-shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={gray} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    )
+  }
+
+  // Padrão (status null/0/desconhecido após envio nosso) → duplo check cinza
+  return (
+    <svg className="inline-block ml-1 flex-shrink-0" width="18" height="12" viewBox="0 0 18 12" fill={gray}>
+      <path d="M17.394 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z"/>
+      <path d="M12.334 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z" opacity=".5"/>
+    </svg>
+  )
 }
 
 function parseVCard(vcard: string): { name: string; phone: string; org: string } {
@@ -634,7 +687,7 @@ export function ChatPanel({
           const sb2 = createBrowserClient()
           const { data } = await sb2
             .from('whatsapp_messages')
-            .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions')
+            .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions, status')
             .eq('contact_id', contact.id)
             .order('timestamp', { ascending: true })
             .limit(100)
@@ -719,7 +772,7 @@ export function ChatPanel({
       const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('whatsapp_messages')
-        .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions')
+        .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions, status')
         .eq('contact_id', contact.id)
         .order('timestamp', { ascending: true })
         .limit(100)
@@ -2414,9 +2467,9 @@ export function ChatPanel({
                       </div>
                     )}
 
-                    <p className={`text-[10px] mt-1 text-right ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>
+                    <p className={`text-[10px] mt-1 text-right flex items-center justify-end gap-0.5 ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>
                       {formatTime(msg.timestamp)}
-                      {msg.from_me && !isIntMsg && <span className="ml-1">✓✓</span>}
+                      {msg.from_me && !isIntMsg && <MsgStatus status={msg.status} />}
                     </p>
                   </div>
                 </div>

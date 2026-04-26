@@ -99,6 +99,22 @@ export async function processWebhookEvent(body: any) {
     )
   }
 
+  // ── STATUS DE MENSAGEM (entregue, lido, etc.) ──────────────
+  if (event === 'MESSAGES_UPDATE') {
+    const updates = Array.isArray(body.data) ? body.data : [body.data]
+    await Promise.all(
+      updates.map(async (u: any) => {
+        const msgId: string = u?.key?.id || ''
+        const status: number | undefined = u?.update?.status
+        if (msgId && status !== undefined) {
+          await db.from('whatsapp_messages')
+            .update({ status: Number(status) })
+            .eq('message_id', msgId)
+        }
+      })
+    )
+  }
+
   // ── MESSAGES ───────────────────────────────────────────────
   if (event === 'MESSAGES_UPSERT') {
     const messages = Array.isArray(body.data) ? body.data : [body.data]
