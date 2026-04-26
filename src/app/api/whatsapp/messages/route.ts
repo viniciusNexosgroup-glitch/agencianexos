@@ -12,6 +12,8 @@ function supabase() {
   )
 }
 
+const PAGE_SIZE = 50
+
 export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
@@ -19,14 +21,25 @@ export async function GET(req: NextRequest) {
   const contactId = req.nextUrl.searchParams.get('contact_id')
   if (!contactId) return NextResponse.json({ error: 'contact_id obrigatório' }, { status: 400 })
 
-  const { data } = await supabase()
-    .from('whatsapp_messages')
-    .select('*')
-    .eq('contact_id', contactId)
-    .order('timestamp', { ascending: true })
-    .limit(100)
+  const before = req.nextUrl.searchParams.get('before') // cursor: buscar mais antigas
+  const after  = req.nextUrl.searchParams.get('after')  // cursor: buscar mais novas (polling)
 
-  return NextResponse.json({ messages: data ?? [] }, {
-    headers: { 'Cache-Control': 'no-store' },
-  })
+  const db = supabase()
+  let q = db.from('whatsapp_messages').select('*').eq('contact_id', contactId)
+
+  if (after) {
+    // Polling incremental: apenas mensagens novas após timestamp
+    const { data } = await q.gt('timestamp', after).order('timestamp', { ascending: true })
+    return NextResponse.json({ messages: data ?? [], has_more: false }, { headers: { 'Cache-Control': 'no-store' } })
+  }
+
+  if (before) {
+    // Load more: mensagens mais antigas antes do cursor
+    const { data } = await q.lt('timestamp', before).order('timestamp', { ascending: false }).limit(PAGE_SIZE)
+    return NextResponse.json({ messages: (data ?? []).reverse(), has_more: (data?.length ?? 0) === PAGE_SIZE }, { headers: { 'Cache-Control': 'no-store' } })
+  }
+
+  // Carga inicial: retorna as 50 mensagens mais RECENTES em ordem cronológica
+  const { data } = await q.order('timestamp', { ascending: false }).limit(PAGE_SIZE)
+  return NextResponse.json({ messages: (data ?? []).reverse(), has_more: (data?.length ?? 0) === PAGE_SIZE }, { headers: { 'Cache-Control': 'no-store' } })
 }

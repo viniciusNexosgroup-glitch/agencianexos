@@ -119,6 +119,9 @@ export async function processWebhookEvent(body: any) {
   if (event === 'MESSAGES_UPSERT') {
     const messages = Array.isArray(body.data) ? body.data : [body.data]
 
+    // Cache de nomes para evitar N+1 queries quando batch tem múltiplas msgs do mesmo contato
+    const contactNameCache = new Map<string, string>()
+
     for (const msg of messages) {
       if (!msg?.key?.remoteJid) continue
       const remoteJid = msg.key.remoteJid
@@ -180,31 +183,40 @@ export async function processWebhookEvent(body: any) {
       const participantJid  = isGroup ? (msg.key.participant || msg.participant || '') : ''
       const participantName = isGroup ? (msg.pushName || participantJid.replace('@s.whatsapp.net', '')) : ''
 
-      // Nome do contato: grupos buscam da Evolution API se não tiver nome real ainda
+      // Nome do contato: usa cache para evitar N+1 queries em batches com múltiplas msgs do mesmo número
       let contactName: string
       if (isGroup) {
-        // Verifica se já existe um nome real no banco antes de chamar a API
-        const { data: existing } = await db.from('whatsapp_contacts')
-          .select('name')
-          .eq('instance_name', instance)
-          .eq('phone', phone)
-          .maybeSingle()
-
-        const hasRealName = existing?.name && !existing.name.endsWith('@g.us') && existing.name !== phone
-        if (hasRealName) {
-          contactName = existing!.name
+        const cached = contactNameCache.get(phone)
+        if (cached) {
+          contactName = cached
         } else {
-          const fetched = await fetchGroupInfo(instance, remoteJid)
-          contactName = fetched || existing?.name || phone
+          const { data: existing } = await db.from('whatsapp_contacts')
+            .select('name')
+            .eq('instance_name', instance)
+            .eq('phone', phone)
+            .maybeSingle()
+          const hasRealName = existing?.name && !existing.name.endsWith('@g.us') && existing.name !== phone
+          if (hasRealName) {
+            contactName = existing!.name
+          } else {
+            const fetched = await fetchGroupInfo(instance, remoteJid)
+            contactName = fetched || existing?.name || phone
+          }
+          contactNameCache.set(phone, contactName)
         }
       } else if (fromMe) {
-        // Para mensagens enviadas por mim, pushName é meu próprio nome — preservar nome existente do contato
-        const { data: existing } = await db.from('whatsapp_contacts')
-          .select('name')
-          .eq('instance_name', instance)
-          .eq('phone', phone)
-          .maybeSingle()
-        contactName = existing?.name || phone
+        const cached = contactNameCache.get(phone)
+        if (cached) {
+          contactName = cached
+        } else {
+          const { data: existing } = await db.from('whatsapp_contacts')
+            .select('name')
+            .eq('instance_name', instance)
+            .eq('phone', phone)
+            .maybeSingle()
+          contactName = existing?.name || phone
+          contactNameCache.set(phone, contactName)
+        }
       } else {
         contactName = msg.pushName || phone
       }
@@ -362,22 +374,22 @@ export async function processWebhookEvent(body: any) {
       }
 
       // Auto-criar lead na etapa "Lead" quando for mensagem recebida de novo contato
+      // Usa o contato já buscado na seção de flows acima (evita query duplicada)
       if (!error && !fromMe && !isGroup) {
-        const { data: contact } = await db
+        const { data: contactForLead } = await db
           .from('whatsapp_contacts')
           .select('id')
           .eq('instance_name', instance)
           .eq('phone', phone)
-          .single()
+          .maybeSingle()
 
-        if (contact?.id) {
+        if (contactForLead?.id) {
           const { count } = await db
             .from('crm_leads')
             .select('id', { count: 'exact', head: true })
-            .eq('contact_id', contact.id)
+            .eq('contact_id', contactForLead.id)
 
           if ((count ?? 0) === 0) {
-            // Busca a etapa "Lead" no primeiro funil disponível
             const { data: leadStage } = await db
               .from('crm_stages')
               .select('id, funnel_id')
@@ -395,13 +407,17 @@ export async function processWebhookEvent(body: any) {
                 .limit(1)
                 .single()
 
-              await db.from('crm_leads').insert({
-                contact_id: contact.id,
-                stage_id: leadStage.id,
-                funnel_id: leadStage.funnel_id,
-                title: contactName || phone,
-                position: (maxPos?.position ?? -1) + 1,
-              })
+              // try/catch torna idempotente: se dois webhooks simultâneos tentarem criar o mesmo lead,
+              // o segundo falhará silenciosamente (DB constraint ou contagem desatualizada)
+              try {
+                await db.from('crm_leads').insert({
+                  contact_id: contactForLead.id,
+                  stage_id: leadStage.id,
+                  funnel_id: leadStage.funnel_id,
+                  title: contactName || phone,
+                  position: (maxPos?.position ?? -1) + 1,
+                })
+              } catch { /* lead já criado por webhook concorrente */ }
             }
           }
         }

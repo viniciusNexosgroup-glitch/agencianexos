@@ -481,8 +481,17 @@ export function KanbanBoard({ stages, leads: initialLeads, contacts, onChat, onL
     if (!over) return
     const leadId = String(active.id)
     const newStageId = String(over.id)
+    const oldStageId = leads.find(l => l.id === leadId)?.stage_id
+    if (newStageId === oldStageId) return
+    // Atualização otimista
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage_id: newStageId } : l))
-    await onLeadMoved?.(leadId, newStageId)
+    try {
+      await onLeadMoved?.(leadId, newStageId)
+    } catch (err) {
+      console.error('[Kanban] Erro ao mover lead, revertendo:', err)
+      // Reverte se a API falhar
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage_id: oldStageId! } : l))
+    }
   }
 
   const leadsFor = useCallback((stageId: string) => {

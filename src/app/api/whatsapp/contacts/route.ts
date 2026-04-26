@@ -22,6 +22,7 @@ export async function GET() {
     .not('phone', 'like', '%@lid')
     .not('phone', 'eq', 'status@broadcast')
     .order('last_message_at', { ascending: false })
+    .limit(500)
 
   return NextResponse.json({ contacts: data ?? [] }, {
     headers: { 'Cache-Control': 'no-store' },

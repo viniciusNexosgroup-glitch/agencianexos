@@ -519,6 +519,8 @@ export function ChatPanel({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Quick Replies
@@ -691,7 +693,7 @@ export function ChatPanel({
       })
       .subscribe()
 
-    // Loop de polling como fallback
+    // Loop de polling como fallback (Realtime é primário; poll só adiciona msgs que não chegaram via socket)
     const POLL_SELECT_FULL = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions, status'
     const POLL_SELECT_BASE = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions'
     let active = true
@@ -705,19 +707,30 @@ export function ChatPanel({
             .from('whatsapp_messages')
             .select(POLL_SELECT_FULL)
             .eq('contact_id', contact.id)
-            .order('timestamp', { ascending: true })
-            .limit(100)
+            .order('timestamp', { ascending: false })
+            .limit(50)
           if (!data) {
             const res = await sb2
               .from('whatsapp_messages')
               .select(POLL_SELECT_BASE)
               .eq('contact_id', contact.id)
-              .order('timestamp', { ascending: true })
-              .limit(100)
+              .order('timestamp', { ascending: false })
+              .limit(50)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             data = res.data as any
           }
-          if (data) setMessages(data as Message[])
+          if (data) {
+            const latest = (data as Message[]).reverse()
+            // Merge: adiciona apenas mensagens novas, preserva antigas (carregadas via loadMore)
+            setMessages(prev => {
+              const existingIds = new Set(prev.map(m => m.id))
+              const newOnes = latest.filter(m => !existingIds.has(m.id))
+              if (newOnes.length === 0) return prev
+              return [...prev, ...newOnes].sort((a, b) =>
+                new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              )
+            })
+          }
         } catch { /* silencioso */ }
       }
     }
@@ -801,27 +814,59 @@ export function ChatPanel({
         .from('whatsapp_messages')
         .select(`${BASE_SELECT}, status`)
         .eq('contact_id', contact.id)
-        .order('timestamp', { ascending: true })
-        .limit(100)
+        .order('timestamp', { ascending: false })
+        .limit(50)
       if (error) {
         // Fallback: coluna status pode não existir ainda (rodar: ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS status INTEGER)
         const { data: data2, error: error2 } = await supabase
           .from('whatsapp_messages')
           .select(BASE_SELECT)
           .eq('contact_id', contact.id)
-          .order('timestamp', { ascending: true })
-          .limit(100)
+          .order('timestamp', { ascending: false })
+          .limit(50)
         if (error2) throw error2
         isAtBottomRef.current = true
-        setMessages(data2 ?? [])
+        const msgs = (data2 ?? []).reverse()
+        setMessages(msgs)
+        setHasMore((data2?.length ?? 0) === 50)
       } else {
         isAtBottomRef.current = true
-        setMessages(data ?? [])
+        const msgs = (data ?? []).reverse()
+        setMessages(msgs)
+        setHasMore((data?.length ?? 0) === 50)
       }
       setLoading(false)
     } catch (err) {
       console.error('[CRM] Erro ao carregar mensagens:', err)
       setLoading(false)
+    }
+  }
+
+  async function loadMore() {
+    const oldest = messages[0]
+    if (!oldest || loadingMore || !hasMore) return
+    setLoadingMore(true)
+    const supabase = createBrowserClient()
+    const BASE_SELECT = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions'
+    try {
+      const { data } = await supabase
+        .from('whatsapp_messages')
+        .select(`${BASE_SELECT}, status`)
+        .eq('contact_id', contact.id)
+        .lt('timestamp', oldest.timestamp)
+        .order('timestamp', { ascending: false })
+        .limit(50)
+      const older = (data ?? []).reverse()
+      // Preserva posição de scroll: calcula altura antes e restaura depois
+      const el = scrollContainerRef.current
+      const prevScrollBottom = el ? el.scrollHeight - el.scrollTop : 0
+      setMessages(prev => [...older, ...prev])
+      setHasMore((data?.length ?? 0) === 50)
+      if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight - prevScrollBottom })
+    } catch (err) {
+      console.error('[CRM] Erro ao carregar mensagens anteriores:', err)
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -2247,6 +2292,19 @@ export function ChatPanel({
       >
         {loading && (
           <p className="text-[#8696a0] text-sm text-center py-4">Carregando mensagens...</p>
+        )}
+        {!loading && hasMore && (
+          <div className="flex justify-center my-3">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="bg-[#182229] text-[#8696a0] hover:text-white text-xs px-4 py-2 rounded-lg transition disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {loadingMore ? (
+                <><span className="inline-block w-3 h-3 border border-[#8696a0] border-t-transparent rounded-full animate-spin"/>Carregando...</>
+              ) : '↑ Carregar mensagens anteriores'}
+            </button>
+          </div>
         )}
         {!loading && messages.length === 0 && (
           <div className="flex justify-center my-4">

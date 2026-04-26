@@ -54,7 +54,7 @@ async function executeStep(
           timestamp: new Date().toISOString(),
           message_type: 'conversation',
         })
-      } catch {}
+      } catch (err) { console.error('[FlowEngine] Erro ao salvar mensagem do flow no banco:', err) }
 
       try {
         await db.rpc('update_last_message', {
@@ -62,7 +62,7 @@ async function executeStep(
           p_body: step.message,
           p_timestamp: new Date().toISOString(),
         })
-      } catch {}
+      } catch (err) { console.error('[FlowEngine] Erro ao atualizar last_message:', err) }
     }
 
     if (step.type === 'tag' && step.tag_name) {
@@ -78,7 +78,7 @@ async function executeStep(
             { contact_id: contactId, tag_id: tag.id },
             { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
           )
-        } catch {}
+        } catch (err) { console.error('[FlowEngine] Erro ao aplicar tag:', err) }
       }
     }
 
@@ -88,7 +88,7 @@ async function executeStep(
           .from('whatsapp_contacts')
           .update({ assigned_to: step.agent_id })
           .eq('id', contactId)
-      } catch {}
+      } catch (err) { console.error('[FlowEngine] Erro ao atribuir agente:', err) }
     }
   } catch (err) {
     console.error('[FlowEngine] Erro ao executar step:', step.type, err)
@@ -140,9 +140,12 @@ export async function runFlowsForMessage(
         .select('id')
         .single()
 
-      // Executa steps sem delay imediatamente
+      // Executa steps sem delay imediatamente; steps com delay são pulados (agendamento não implementado)
       for (const step of steps) {
-        if ((step.delay_hours ?? 0) > 0) break // para ao encontrar delay
+        if ((step.delay_hours ?? 0) > 0) {
+          console.warn(`[FlowEngine] step "${step.type}" tem delay de ${step.delay_hours}h — agendamento automático não implementado, steps restantes ignorados`)
+          break
+        }
 
         if (step.type === 'condition') {
           // Condição: se texto contém keyword, pula para outro step (básico)
