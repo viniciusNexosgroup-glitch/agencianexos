@@ -149,6 +149,42 @@ export async function processWebhookEvent(body: any) {
         continue
       }
 
+      // Voto em enquete: atualiza media_data da enquete original
+      if (msgType === 'pollUpdateMessage') {
+        const update = innerMsg.pollUpdateMessage
+        const pollMsgId = update?.pollCreationMessageKey?.id
+        const selectedOptions: string[] = update?.vote?.selectedOptions ?? []
+        const voter = fromMe ? 'me' : phone
+
+        if (pollMsgId) {
+          const { data: pollMsg } = await db.from('whatsapp_messages')
+            .select('id, media_data')
+            .eq('message_id', pollMsgId)
+            .maybeSingle()
+
+          if (pollMsg?.media_data) {
+            const md = pollMsg.media_data as Record<string, unknown>
+            const votes = { ...((md.votes as Record<string, string[]>) ?? {}) }
+
+            if (selectedOptions.length === 0) {
+              delete votes[voter]
+            } else {
+              votes[voter] = selectedOptions
+            }
+
+            const options = ((md.options as Array<{ name: string; votes: number }>) ?? []).map(opt => ({
+              ...opt,
+              votes: Object.values(votes).filter((v) => Array.isArray(v) && v.includes(opt.name)).length,
+            }))
+
+            await db.from('whatsapp_messages')
+              .update({ media_data: { ...md, votes, options } })
+              .eq('id', pollMsg.id)
+          }
+        }
+        continue
+      }
+
       // Reação: atualiza a mensagem alvo e não insere nova mensagem
       if (msgType === 'reactionMessage') {
         const reaction = innerMsg.reactionMessage
@@ -174,6 +210,7 @@ export async function processWebhookEvent(body: any) {
         || innerMsg.extendedTextMessage?.text
         || innerMsg.imageMessage?.caption
         || innerMsg.videoMessage?.caption
+        || innerMsg.pollCreationMessage?.name
         || ''
       const timestamp = msg.messageTimestamp
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
@@ -299,6 +336,24 @@ export async function processWebhookEvent(body: any) {
             message: { videoMessage: videoData },
           }
           await db.from('whatsapp_messages').update(updates).eq('message_id', msg.key.id)
+        }
+      }
+
+      // Enquete: salva nome e opções em media_data para renderização no CRM
+      if (!error && msgType === 'pollCreationMessage') {
+        const poll = innerMsg.pollCreationMessage
+        if (poll?.options) {
+          await db.from('whatsapp_messages').update({
+            media_data: {
+              name: poll.name ?? text,
+              options: (poll.options as Array<{ optionName?: string; name?: string }>).map(o => ({
+                name: o.optionName ?? o.name ?? '',
+                votes: 0,
+              })),
+              selectableCount: poll.selectableOptionsCount ?? 1,
+              votes: {},
+            }
+          }).eq('message_id', msg.key.id)
         }
       }
 

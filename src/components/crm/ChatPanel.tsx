@@ -2550,6 +2550,50 @@ export function ChatPanel({
                       )
                     })()}
 
+                    {/* Enquete */}
+                    {msg.message_type === 'pollCreationMessage' && (() => {
+                      type PollOption = { name: string; votes: number }
+                      const d = msg.media_data as { name: string; options: PollOption[]; selectableCount: number } | null
+                      if (!d?.options) return <span className="italic text-[#8696a0] text-xs flex items-center gap-1">📊 Enquete</span>
+                      const totalVotes = d.options.reduce((s, o) => s + (o.votes || 0), 0)
+                      return (
+                        <div style={{ minWidth: 200, maxWidth: 280 }}>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: msg.from_me ? '#e9edef' : '#00a884' }} viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4zm2.5 2.1h-15V5h15v14.1zm0-16.1h-15C3.6 3 3 3.6 3 4.5v15C3 20.4 3.6 21 4.5 21h15c.9 0 1.5-.6 1.5-1.5v-15C21 3.6 20.4 3 19.5 3z"/>
+                            </svg>
+                            <span className="text-[11px] font-medium opacity-70">ENQUETE</span>
+                          </div>
+                          <p className="text-sm font-medium leading-snug mb-3">{d.name || msg.body}</p>
+                          <div className="space-y-2">
+                            {d.options.map((opt, i) => {
+                              const pct = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0
+                              return (
+                                <div key={i}>
+                                  <div className="flex items-center justify-between text-xs mb-1">
+                                    <span className="text-[#e9edef] leading-tight">{opt.name}</span>
+                                    {totalVotes > 0 && <span className="text-[#8696a0] ml-2 flex-shrink-0">{pct}%</span>}
+                                  </div>
+                                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.12)' }}>
+                                    <div
+                                      className="h-full rounded-full transition-all"
+                                      style={{ width: `${pct}%`, background: msg.from_me ? '#e9edef' : '#00a884' }}
+                                    />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          {totalVotes > 0 && (
+                            <p className="text-[10px] mt-2 opacity-50">{totalVotes} voto{totalVotes !== 1 ? 's' : ''}</p>
+                          )}
+                          {totalVotes === 0 && (
+                            <p className="text-[10px] mt-2 opacity-40">Selecione uma ou mais opções</p>
+                          )}
+                        </div>
+                      )
+                    })()}
+
                     {/* Texto (incluindo legenda de imagem/vídeo) */}
                     {msg.message_type !== 'imageMessage' &&
                      msg.message_type !== 'stickerMessage' &&
@@ -2558,7 +2602,8 @@ export function ChatPanel({
                      msg.message_type !== 'videoMessage' &&
                      msg.message_type !== 'documentMessage' &&
                      msg.message_type !== 'contactMessage' &&
-                     msg.message_type !== 'contactsArrayMessage' && (
+                     msg.message_type !== 'contactsArrayMessage' &&
+                     msg.message_type !== 'pollCreationMessage' && (
                       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                         {msg.body
                           ? (searchQuery ? highlightText(msg.body, searchQuery) : msg.body)
