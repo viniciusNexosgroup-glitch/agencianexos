@@ -870,7 +870,10 @@ export function ChatPanel({
   async function handleDeleteForAll(msg: Message) {
     setDeletingMsg(true)
     setDeleteTarget(null)
-    setMessages(prev => prev.filter(m => m.id !== msg.id))
+    // Marca como apagada no estado (igual WhatsApp — mensagem permanece visível como "Mensagem apagada")
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, message_type: 'revoked', body: '', media_url: null, media_data: null } : m
+    ))
     const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
     await fetch('/api/whatsapp/delete-message', {
       method: 'DELETE',
@@ -2325,6 +2328,15 @@ export function ChatPanel({
                     }`}
                     style={isIntMsg ? { backgroundColor: '#2d3748', color: '#e9edef' } : undefined}
                   >
+                    {/* Mensagem apagada para todos */}
+                    {msg.message_type === 'revoked' ? (
+                      <p className="text-sm italic text-[#8696a0] flex items-center gap-1.5">
+                        <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                        Mensagem apagada
+                        <span className={`ml-1 text-[10px] not-italic ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>{formatTime(msg.timestamp)}</span>
+                      </p>
+                    ) : (<>
+
                     {/* Badge nota interna */}
                     {isIntMsg && (
                       <span className="inline-block text-yellow-400 text-[10px] font-semibold uppercase tracking-wide mb-1 border border-yellow-700 rounded px-1">
@@ -2482,6 +2494,7 @@ export function ChatPanel({
                       {formatTime(msg.timestamp)}
                       {msg.from_me && !isIntMsg && <MsgStatus status={msg.status} />}
                     </p>
+                    </>)}
                   </div>
                 </div>
               )

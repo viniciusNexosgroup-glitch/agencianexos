@@ -135,6 +135,17 @@ export async function processWebhookEvent(body: any) {
       const innerMsg = msg.message?.deviceSentMessage?.message || msg.message || {}
       const msgType = Object.keys(innerMsg).find(k => !META_KEYS.has(k)) || 'text'
 
+      // Mensagem apagada para todos (protocolMessage REVOKE)
+      if (msgType === 'protocolMessage' && innerMsg.protocolMessage?.type === 'REVOKE') {
+        const deletedId = innerMsg.protocolMessage?.key?.id
+        if (deletedId) {
+          await db.from('whatsapp_messages')
+            .update({ message_type: 'revoked', body: '', media_url: null, media_data: null })
+            .eq('message_id', deletedId)
+        }
+        continue
+      }
+
       // Reação: atualiza a mensagem alvo e não insere nova mensagem
       if (msgType === 'reactionMessage') {
         const reaction = innerMsg.reactionMessage
