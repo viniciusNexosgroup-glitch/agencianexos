@@ -515,25 +515,40 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   async function fetchContacts() {
     const { data } = await createBrowserClient()
       .from('whatsapp_contacts')
-      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url, contact_tags(tags(id, name, color))')
+      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url')
       .not('phone', 'like', '%@lid')
       .not('phone', 'eq', 'status@broadcast')
       .order('last_message_at', { ascending: false })
     return data ?? []
   }
 
+  // Carrega TODAS as tags de contatos de uma vez (2 queries, sem depender de FK do Supabase)
+  async function fetchAllContactTags() {
+    try {
+      const sb = createBrowserClient()
+      const [{ data: ctData }, { data: tagsData }] = await Promise.all([
+        sb.from('contact_tags').select('contact_id, tag_id'),
+        sb.from('tags').select('id, name, color'),
+      ])
+      if (!ctData || !tagsData) return
+      const tagsById = Object.fromEntries(tagsData.map((t: any) => [t.id, t as Tag]))
+      const map: Record<string, Tag[]> = {}
+      for (const ct of ctData as { contact_id: string; tag_id: string }[]) {
+        const tag = tagsById[ct.tag_id]
+        if (tag) {
+          map[ct.contact_id] = [...(map[ct.contact_id] ?? []), tag]
+        }
+      }
+      setContactTagsMap(prev => ({ ...prev, ...map }))
+    } catch { /* silencioso */ }
+  }
+
   function applyContacts(raw: any[]) {
     const currentId = chatContactRef.current?.id
-    const tagsMap: Record<string, Tag[]> = {}
-    const list: Contact[] = raw.map((c: any) => {
-      // Extrai tags do join e popula o mapa
-      const tags: Tag[] = (c.contact_tags ?? [])
-        .map((ct: any) => ct.tags)
-        .filter(Boolean)
-      tagsMap[c.id] = tags
-      const { contact_tags: _ct, ...rest } = c
-      return { ...rest, unread_count: Number(c.unread_count ?? 0) }
-    })
+    const list: Contact[] = raw.map((c: any) => ({
+      ...c,
+      unread_count: Number(c.unread_count ?? 0),
+    }))
     const merged = list.map(c =>
       currentId && c.id === currentId ? { ...c, unread_count: 0 } : c
     )
@@ -543,8 +558,6 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
       return tb - ta
     })
     setContacts(merged)
-    // Atualiza o mapa de tags sem sobrescrever entradas mais recentes (ex: edição via modal)
-    setContactTagsMap(prev => ({ ...prev, ...tagsMap }))
   }
 
   async function load() {
@@ -573,6 +586,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   useEffect(() => {
     load()
     fetchTags()
+    fetchAllContactTags()
     fetch('/api/whatsapp/instance').then(r => r.json()).then(d => setInstances(d.instances ?? d ?? []))
     try {
       const saved = JSON.parse(localStorage.getItem('crm_saved_filters') || '[]')
@@ -1000,7 +1014,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
       {showTagManager && (
         <TagManagerModal
           onClose={() => setShowTagManager(false)}
-          onTagsChanged={() => { fetchTags(); load() }}
+          onTagsChanged={() => { fetchTags(); fetchAllContactTags() }}
         />
       )}
     </>
