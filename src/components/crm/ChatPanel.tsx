@@ -656,6 +656,16 @@ export function ChatPanel({
           setMessages(prev => {
             const msg = payload.new as Message
             if (prev.some(m => m.id === msg.id)) return prev
+            // Substitui mensagem otimista (sem message_id real) pelo registro real do banco
+            // Evita duplicata sem precisar de setTimeout(load)
+            if (msg.from_me) {
+              const optimIdx = prev.findIndex(m =>
+                m.from_me && m.message_type === msg.message_type && !m.message_id
+              )
+              if (optimIdx >= 0) {
+                return prev.map((m, i) => i === optimIdx ? { ...m, id: msg.id, message_id: msg.message_id, status: msg.status } : m)
+              }
+            }
             return [...prev, msg]
           })
         }
@@ -670,7 +680,7 @@ export function ChatPanel({
           const updated = payload.new as Message
           setMessages(prev => prev.map(m =>
             m.id === updated.id
-              ? { ...m, reactions: updated.reactions, media_url: updated.media_url }
+              ? { ...m, reactions: updated.reactions, media_url: updated.media_url, message_type: updated.message_type, body: updated.body ?? m.body, media_data: updated.media_data ?? m.media_data, status: updated.status ?? m.status }
               : m
           ))
         }
@@ -1155,7 +1165,12 @@ export function ChatPanel({
         setMessages(prev => prev.filter(m => m.id !== optimistic.id))
         setText(body)
       } else {
-        setTimeout(load, 1500)
+        // Substitui a mensagem otimista pelo ID real do banco para evitar duplicata via realtime
+        if (result.id) {
+          setMessages(prev => prev.map(m =>
+            m.id === optimistic.id ? { ...m, id: result.id, message_id: result.message_id ?? m.message_id } : m
+          ))
+        }
       }
     } catch {
       setError('Erro de conexão. Tente novamente.')
@@ -1270,10 +1285,8 @@ export function ChatPanel({
             if (data.error) {
               setError('Erro ao enviar áudio: ' + data.error)
               setMessages(prev => prev.filter(m => m.id !== optimistic.id))
-            } else {
-              // Recarrega após 3s para substituir otimista pelo registro real do DB
-              setTimeout(load, 3000)
             }
+            // realtime INSERT irá substituir o otimista quando o webhook salvar no banco
           } catch {
             setError('Erro de conexão ao enviar áudio.')
             setMessages(prev => prev.filter(m => m.id !== optimistic.id))
@@ -1373,9 +1386,8 @@ export function ChatPanel({
         if (data.error) {
           setError('Erro ao enviar áudio: ' + data.error)
           setMessages(prev => prev.filter(m => m.id !== optimistic.id))
-        } else {
-          setTimeout(load, 3000)
         }
+        // realtime INSERT irá substituir o otimista quando o webhook salvar no banco
       } catch {
         setError('Erro de conexão ao enviar áudio.')
         setMessages(prev => prev.filter(m => m.id !== optimistic.id))
@@ -1401,8 +1413,10 @@ export function ChatPanel({
         if (result.error) {
           setError(result.error)
           setMessages(prev => prev.filter(m => m.id !== optimistic.id))
-        } else {
-          setTimeout(load, 1500)
+        } else if (result.id) {
+          setMessages(prev => prev.map(m =>
+            m.id === optimistic.id ? { ...m, id: result.id, message_id: result.message_id ?? m.message_id } : m
+          ))
         }
       } catch {
         setError('Erro de conexão.')

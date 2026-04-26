@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   // Nota interna: salva só no banco, não envia pelo WhatsApp
   if (is_internal) {
-    const { error: dbError } = await supabase().from('whatsapp_messages').insert({
+    const { data: inserted, error: dbError } = await supabase().from('whatsapp_messages').insert({
       contact_id: contactId,
       instance_name: instanceName,
       message_id: crypto.randomUUID(),
@@ -52,9 +52,9 @@ export async function POST(req: NextRequest) {
       message_type: 'text',
       timestamp: new Date().toISOString(),
       is_internal: true,
-    })
+    }).select('id, message_id').single()
     if (dbError) console.error('DB insert error (internal note):', dbError.message)
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, id: inserted?.id, message_id: inserted?.message_id })
   }
 
   const isGroup = phone.includes('@g.us')
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 
-  const { error: dbError } = await supabase().from('whatsapp_messages').insert({
+  const { data: inserted, error: dbError } = await supabase().from('whatsapp_messages').insert({
     contact_id: contactId,
     instance_name: instanceName,
     message_id: (result.key as Record<string, unknown>)?.id as string || crypto.randomUUID(),
@@ -103,9 +103,9 @@ export async function POST(req: NextRequest) {
     message_type: 'text',
     timestamp: new Date().toISOString(),
     is_internal: false,
-  })
+  }).select('id, message_id').single()
 
   if (dbError) console.error('DB insert error:', dbError.message)
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, id: inserted?.id, message_id: inserted?.message_id })
 }
