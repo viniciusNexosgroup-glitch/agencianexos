@@ -6,10 +6,13 @@ const headers = () => ({
   apikey: API_KEY,
 })
 
+const timeout = (ms = 15000) => AbortSignal.timeout(ms)
+
 export async function createInstance(name: string) {
   const res = await fetch(`${BASE_URL}/instance/create`, {
     method: 'POST',
     headers: headers(),
+    signal: timeout(),
     body: JSON.stringify({
       instanceName: name,
       qrcode: true,
@@ -43,6 +46,7 @@ export async function createCloudApiInstance(
 export async function getInstanceStatus(name: string) {
   const res = await fetch(`${BASE_URL}/instance/connectionState/${name}`, {
     headers: headers(),
+    signal: timeout(8000),
   })
   return res.json()
 }
@@ -50,6 +54,7 @@ export async function getInstanceStatus(name: string) {
 export async function getQRCode(name: string) {
   const res = await fetch(`${BASE_URL}/instance/connect/${name}`, {
     headers: headers(),
+    signal: timeout(10000),
   })
   return res.json()
 }
@@ -98,6 +103,7 @@ export async function sendTextMessage(instanceName: string, to: string, text: st
   const res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
     method: 'POST',
     headers: headers(),
+    signal: timeout(20000),
     body: JSON.stringify({ number: to, text }),
   })
   return res.json()

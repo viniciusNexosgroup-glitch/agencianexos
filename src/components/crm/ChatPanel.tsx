@@ -251,6 +251,10 @@ function VideoPlayer({
   const [modalOpen, setModalOpen] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
+  useEffect(() => {
+    return () => { if (videoSrc) URL.revokeObjectURL(videoSrc) }
+  }, [videoSrc])
+
   async function openModal() {
     setModalOpen(true)
     if (videoSrc) return

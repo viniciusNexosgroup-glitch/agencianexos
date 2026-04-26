@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
     if (isNotAcceptable) {
       console.log(`[send] not-acceptable para grupo ${number} — aquecendo sessão e tentando novamente...`)
       await warmupGroup(instanceName, number)
+      await sleep(2000)
       res = await doSend()
       result = await res.json().catch(() => ({})) as Record<string, unknown>
     }

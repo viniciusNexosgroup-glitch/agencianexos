@@ -26,10 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'JSON inválido' }, { status: 400 })
   }
   console.log('Webhook POST recebido:', JSON.stringify(body).slice(0, 300))
-  try {
-    await processWebhookEvent(body)
-  } catch (err) {
-    console.error('Erro ao processar webhook:', err)
-  }
+  // Fire-and-forget: responde imediatamente para Evolution API não reenviar por timeout
+  processWebhookEvent(body).catch(err => console.error('Erro ao processar webhook:', err))
   return NextResponse.json({ ok: true })
 }
