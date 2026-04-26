@@ -522,25 +522,20 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     return data ?? []
   }
 
-  // Carrega TODAS as tags de contatos de uma vez (2 queries, sem depender de FK do Supabase)
+  // Carrega TODAS as tags de contatos via rota server-side (service role — sem problema de RLS)
   async function fetchAllContactTags() {
     try {
-      const sb = createBrowserClient()
-      const [{ data: ctData }, { data: tagsData }] = await Promise.all([
-        sb.from('contact_tags').select('contact_id, tag_id'),
-        sb.from('tags').select('id, name, color'),
-      ])
-      if (!ctData || !tagsData) return
-      const tagsById = Object.fromEntries(tagsData.map((t: any) => [t.id, t as Tag]))
-      const map: Record<string, Tag[]> = {}
-      for (const ct of ctData as { contact_id: string; tag_id: string }[]) {
-        const tag = tagsById[ct.tag_id]
-        if (tag) {
-          map[ct.contact_id] = [...(map[ct.contact_id] ?? []), tag]
-        }
+      const res = await fetch('/api/whatsapp/contact-tags')
+      if (!res.ok) {
+        console.error('[CRM] Erro ao carregar tags de contatos:', res.status)
+        return
       }
-      setContactTagsMap(prev => ({ ...prev, ...map }))
-    } catch { /* silencioso */ }
+      const data = await res.json()
+      const map = data.contactTags as Record<string, Tag[]>
+      if (map) setContactTagsMap(prev => ({ ...prev, ...map }))
+    } catch (err) {
+      console.error('[CRM] Erro ao carregar tags de contatos:', err)
+    }
   }
 
   function applyContacts(raw: any[]) {
