@@ -129,10 +129,8 @@ function TagDropdown({ contactId, onClose, onTagsChange }: { contactId: string; 
     const has = contactTags.some(t => t.id === tag.id)
     let updated: Tag[]
     if (has) {
-      await fetch(`/api/whatsapp/contacts/${contactId}/tags`, {
+      await fetch(`/api/whatsapp/contacts/${contactId}/tags?tag_id=${tag.id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag_id: tag.id }),
       })
       updated = contactTags.filter(t => t.id !== tag.id)
     } else {
