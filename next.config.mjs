@@ -2,7 +2,6 @@
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['googleapis', 'google-auth-library'],
-    cpus: 1,
   },
   typescript: {
     ignoreBuildErrors: true,
