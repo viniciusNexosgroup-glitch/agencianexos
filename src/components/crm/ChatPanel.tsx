@@ -25,6 +25,7 @@ type Contact = {
   phone: string
   instance_name: string
   remote_jid?: string | null
+  follow_up?: boolean
 }
 
 type Lead = {
@@ -534,17 +535,21 @@ export function ChatPanel({
   onClose,
   funnels,
   onOpenContact,
+  onFollowUpChange,
 }: {
   contact: Contact
   onClose: () => void
   funnels?: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
   onOpenContact?: (phone: string, instanceName: string) => void
+  onFollowUpChange?: (contactId: string, value: boolean) => void
 }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [followUp, setFollowUp] = useState(!!contact.follow_up)
+  const [togglingFollowUp, setTogglingFollowUp] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
@@ -675,7 +680,27 @@ export function ChatPanel({
   useEffect(() => {
     setProfilePanel(null)
     setReplyingTo(null)
+    setFollowUp(!!contact.follow_up)
   }, [contact.id])
+
+  async function toggleFollowUp() {
+    if (togglingFollowUp) return
+    setTogglingFollowUp(true)
+    const newVal = !followUp
+    setFollowUp(newVal)
+    try {
+      await fetch(`/api/whatsapp/contacts/${contact.id}/follow-up`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ follow_up: newVal }),
+      })
+      onFollowUpChange?.(contact.id, newVal)
+    } catch {
+      setFollowUp(!newVal)
+    } finally {
+      setTogglingFollowUp(false)
+    }
+  }
 
   useEffect(() => {
     setMessages([])
@@ -2285,6 +2310,18 @@ export function ChatPanel({
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+
+        {/* Botão follow-up */}
+        <button
+          onClick={toggleFollowUp}
+          disabled={togglingFollowUp}
+          title={followUp ? 'Remover follow-up' : 'Marcar para follow-up'}
+          className={`p-1.5 rounded-full transition ${followUp ? 'text-amber-400' : 'text-[#8696a0] hover:text-white'}`}
+        >
+          <svg className="w-5 h-5" fill={followUp ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={followUp ? 0 : 1.8} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
           </svg>
         </button>
 

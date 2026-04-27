@@ -12,19 +12,20 @@ function supabase() {
   )
 }
 
-export async function GET() {
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { data } = await supabase()
-    .from('whatsapp_contacts')
-    .select('id, name, phone, instance_name, last_message_at, remote_jid, unread_count, profile_pic_url, follow_up')
-    .not('phone', 'like', '%@lid')
-    .not('phone', 'eq', 'status@broadcast')
-    .order('last_message_at', { ascending: false })
-    .limit(500)
+  const { follow_up } = await req.json()
 
-  return NextResponse.json({ contacts: data ?? [] }, {
-    headers: { 'Cache-Control': 'no-store' },
-  })
+  const { data, error } = await supabase()
+    .from('whatsapp_contacts')
+    .update({ follow_up: !!follow_up })
+    .eq('id', params.id)
+    .select('id, follow_up')
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ contact: data })
 }

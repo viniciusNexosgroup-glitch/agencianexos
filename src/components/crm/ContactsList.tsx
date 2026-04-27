@@ -16,6 +16,7 @@ type Contact = {
   remote_jid: string | null
   unread_count: number
   profile_pic_url?: string | null
+  follow_up?: boolean
 }
 
 type Tag = {
@@ -425,12 +426,14 @@ function ChatPanelWithTags({
   funnels,
   onOpenContact,
   onContactTagsChange,
+  onFollowUpChange,
 }: {
   contact: Contact
   onClose: () => void
   funnels: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
   onOpenContact?: (phone: string, instanceName: string) => void
   onContactTagsChange?: (contactId: string, tags: Tag[]) => void
+  onFollowUpChange?: (contactId: string, value: boolean) => void
 }) {
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
 
@@ -462,7 +465,7 @@ function ChatPanelWithTags({
           )}
         </div>
       </div>
-      <ChatPanel contact={contact} onClose={onClose} funnels={funnels} onOpenContact={onOpenContact} />
+      <ChatPanel contact={contact} onClose={onClose} funnels={funnels} onOpenContact={onOpenContact} onFollowUpChange={onFollowUpChange} />
     </div>
   )
 }
@@ -936,7 +939,14 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
                   {/* Info */}
                   <div className="flex-1 min-w-0 text-left">
                     <div className="flex items-center justify-between">
-                      <span className={`text-sm truncate ${unread > 0 ? 'text-white font-semibold' : 'text-white font-medium'}`}>{contact.name}</span>
+                      <div className="flex items-center gap-1 min-w-0">
+                        {contact.follow_up && (
+                          <svg className="w-3 h-3 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
+                          </svg>
+                        )}
+                        <span className={`text-sm truncate ${unread > 0 ? 'text-white font-semibold' : 'text-white font-medium'}`}>{contact.name}</span>
+                      </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
                         {contact.last_message_at && (
                           <span className={`text-xs ${unread > 0 ? 'text-[#00a884]' : 'text-[#8696a0]'}`}>
@@ -983,6 +993,10 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               onContactTagsChange={(contactId, tags) =>
                 setContactTagsMap(prev => ({ ...prev, [contactId]: tags }))
               }
+              onFollowUpChange={(contactId, value) => {
+                setContacts(prev => prev.map(c => c.id === contactId ? { ...c, follow_up: value } : c))
+                setChatContact(prev => prev && prev.id === contactId ? { ...prev, follow_up: value } : prev)
+              }}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
