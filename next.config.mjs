@@ -1,10 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['googleapis', 'google-auth-library'],
-    cpus: 1,
+    serverComponentsExternalPackages: ['googleapis', 'google-auth-library', 'google-ads-api', '@grpc/grpc-js'],
   },
-  staticPageGenerationTimeout: 30,
+  staticPageGenerationTimeout: 120,
   typescript: {
     ignoreBuildErrors: true,
   },
