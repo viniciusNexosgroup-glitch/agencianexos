@@ -27,6 +27,7 @@ type Contact = {
   instance_name: string
   last_message_at: string | null
   unread_count: number
+  follow_up?: boolean
 }
 
 type Enrollment = {
@@ -308,8 +309,6 @@ export function FollowUpManager() {
   const [expandedSeq, setExpandedSeq] = useState<string | null>(null)
   const [deletingSeq, setDeletingSeq] = useState<string | null>(null)
 
-  const FOLLOWUP_THRESHOLD_MS = 48 * 3600 * 1000
-
   const loadAll = useCallback(async () => {
     setLoading(true)
     const [seqRes, contactsRes, enrollRes] = await Promise.all([
@@ -325,12 +324,7 @@ export function FollowUpManager() {
     setEnrollments(enrollData.enrollments ?? [])
 
     const allContacts: Contact[] = contactsData.contacts ?? contactsData ?? []
-    const followup = allContacts.filter(c => {
-      if (!c.last_message_at) return false
-      const age = Date.now() - new Date(c.last_message_at).getTime()
-      return age > FOLLOWUP_THRESHOLD_MS && c.unread_count === 0
-    })
-    setContacts(followup)
+    setContacts(allContacts.filter(c => c.follow_up === true))
     setLoading(false)
   }, [])
 
@@ -368,7 +362,7 @@ export function FollowUpManager() {
       {/* Tabs internas */}
       <div className="flex gap-1 mb-5 bg-slate-900 border border-slate-800 rounded-xl p-1 w-fit">
         {([
-          { key: 'contatos',  label: `Precisam de Follow-up (${contacts.length})` },
+          { key: 'contatos',  label: `Follow-up (${contacts.length})` },
           { key: 'sequencias', label: `Sequências (${sequences.length})` },
           { key: 'ativos',    label: `Ativos (${activeEnrollments.length})` },
         ] as const).map(t => (
@@ -396,8 +390,8 @@ export function FollowUpManager() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <p className="text-slate-400 font-medium">Nenhum contato pendente</p>
-                  <p className="text-slate-600 text-sm mt-1">Todos os contatos responderam nas últimas 48h</p>
+                  <p className="text-slate-400 font-medium">Nenhum contato marcado</p>
+                  <p className="text-slate-600 text-sm mt-1">Use o botão de sinalizador 🚩 no chat para marcar contatos</p>
                 </div>
               ) : (
                 contacts.map(c => (
@@ -511,7 +505,7 @@ export function FollowUpManager() {
               {enrollments.length === 0 ? (
                 <div className="flex flex-col items-center py-20 text-center">
                   <p className="text-slate-400 font-medium">Nenhum follow-up ativo</p>
-                  <p className="text-slate-600 text-sm mt-1">Inicie um follow-up na aba "Precisam de Follow-up"</p>
+                  <p className="text-slate-600 text-sm mt-1">Inicie um follow-up na aba "Follow-up"</p>
                 </div>
               ) : (
                 enrollments.map(e => (

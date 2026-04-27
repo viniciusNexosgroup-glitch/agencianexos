@@ -536,12 +536,14 @@ export function ChatPanel({
   funnels,
   onOpenContact,
   onFollowUpChange,
+  tagButton,
 }: {
   contact: Contact
   onClose: () => void
   funnels?: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
   onOpenContact?: (phone: string, instanceName: string) => void
   onFollowUpChange?: (contactId: string, value: boolean) => void
+  tagButton?: React.ReactNode
 }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [text, setText] = useState('')
@@ -689,12 +691,16 @@ export function ChatPanel({
     const newVal = !followUp
     setFollowUp(newVal)
     try {
-      await fetch(`/api/whatsapp/contacts/${contact.id}/follow-up`, {
+      const res = await fetch(`/api/whatsapp/contacts/${contact.id}/follow-up`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ follow_up: newVal }),
       })
-      onFollowUpChange?.(contact.id, newVal)
+      if (!res.ok) {
+        setFollowUp(!newVal)
+      } else {
+        onFollowUpChange?.(contact.id, newVal)
+      }
     } catch {
       setFollowUp(!newVal)
     } finally {
@@ -2335,6 +2341,9 @@ export function ChatPanel({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
         </button>
+
+        {/* Botão de tags (injetado pelo ChatPanelWithTags) */}
+        {tagButton}
 
         {/* Botão de busca */}
         <button

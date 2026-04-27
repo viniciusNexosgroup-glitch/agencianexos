@@ -437,36 +437,41 @@ function ChatPanelWithTags({
 }) {
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
 
-  return (
-    <div className="flex flex-col h-full relative">
-      {/* Botão de tag flutuante sobre o header */}
-      <div className="absolute right-4 top-2 z-20 flex items-center">
-        <div className="relative">
-          <button
-            onClick={() => setTagDropdownOpen(p => !p)}
-            title="Gerenciar tags do contato"
-            className="flex items-center justify-center w-8 h-8 rounded-full text-[#8696a0] hover:text-white hover:bg-[#3d4f5a] transition"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"
-              />
-            </svg>
-          </button>
-          {tagDropdownOpen && (
-            <TagDropdown
-              contactId={contact.id}
-              onClose={() => setTagDropdownOpen(false)}
-              onTagsChange={tags => onContactTagsChange?.(contact.id, tags)}
-            />
-          )}
-        </div>
-      </div>
-      <ChatPanel contact={contact} onClose={onClose} funnels={funnels} onOpenContact={onOpenContact} onFollowUpChange={onFollowUpChange} />
+  const tagButton = (
+    <div className="relative">
+      <button
+        onClick={() => setTagDropdownOpen(p => !p)}
+        title="Gerenciar tags do contato"
+        className={`p-1.5 rounded-full transition ${tagDropdownOpen ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"
+          />
+        </svg>
+      </button>
+      {tagDropdownOpen && (
+        <TagDropdown
+          contactId={contact.id}
+          onClose={() => setTagDropdownOpen(false)}
+          onTagsChange={tags => onContactTagsChange?.(contact.id, tags)}
+        />
+      )}
     </div>
+  )
+
+  return (
+    <ChatPanel
+      contact={contact}
+      onClose={onClose}
+      funnels={funnels}
+      onOpenContact={onOpenContact}
+      onFollowUpChange={onFollowUpChange}
+      tagButton={tagButton}
+    />
   )
 }
 
