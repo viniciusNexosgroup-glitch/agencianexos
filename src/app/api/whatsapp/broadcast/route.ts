@@ -14,11 +14,10 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { data, error } = await supabase()
-    .from('broadcast_campaigns')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(50)
+  let q = supabase().from('broadcast_campaigns').select('*').order('created_at', { ascending: false }).limit(50)
+  if (!session.is_admin) q = q.eq('created_by', session.sub)
+
+  const { data, error } = await q
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

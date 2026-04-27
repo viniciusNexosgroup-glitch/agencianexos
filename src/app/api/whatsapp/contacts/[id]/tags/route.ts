@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessContact, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -16,6 +17,8 @@ export async function GET(
 ) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  if (!await canAccessContact(params.id, session)) return denied()
 
   const { data, error } = await supabase()
     .from('contact_tags')
@@ -35,6 +38,8 @@ export async function POST(
 ) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  if (!await canAccessContact(params.id, session)) return denied()
 
   const body = await req.json()
   const { tag_id } = body
@@ -59,6 +64,8 @@ export async function DELETE(
 ) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  if (!await canAccessContact(params.id, session)) return denied()
 
   const tag_id = req.nextUrl.searchParams.get('tag_id')
   if (!tag_id) return NextResponse.json({ error: 'tag_id é obrigatório' }, { status: 400 })

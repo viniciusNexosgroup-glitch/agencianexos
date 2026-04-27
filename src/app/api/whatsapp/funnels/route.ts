@@ -14,11 +14,10 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { data } = await supabase()
-    .from('crm_funnels')
-    .select('*, crm_stages(*)')
-    .order('created_at', { ascending: true })
+  let q = supabase().from('crm_funnels').select('*, crm_stages(*)').order('created_at', { ascending: true })
+  if (!session.is_admin) q = q.eq('created_by', session.sub)
 
+  const { data } = await q
   return NextResponse.json({ funnels: data ?? [] })
 }
 
@@ -30,7 +29,7 @@ export async function POST(req: NextRequest) {
   if (!name) return NextResponse.json({ error: 'Nome obrigatório' }, { status: 400 })
 
   const db = supabase()
-  const { data: funnel } = await db.from('crm_funnels').insert({ name }).select().single()
+  const { data: funnel } = await db.from('crm_funnels').insert({ name, created_by: session.sub }).select().single()
   if (!funnel) return NextResponse.json({ error: 'Erro ao criar funil' }, { status: 500 })
 
   if (stages?.length) {

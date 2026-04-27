@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
 import { markChatAsRead } from '@/lib/evolution'
+import { canAccessContact, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -14,6 +15,8 @@ function supabase() {
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  if (!await canAccessContact(params.id, session)) return denied()
 
   const { action } = await req.json()
 

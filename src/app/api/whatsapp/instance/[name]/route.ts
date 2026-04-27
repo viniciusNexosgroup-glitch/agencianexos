@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getQRCode, getInstanceStatus, deleteInstance, logoutInstance, setWebhook } from '@/lib/evolution'
 import { getSession } from '@/lib/session'
+import { canAccessInstance, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -16,6 +17,8 @@ export async function GET(req: NextRequest, { params }: { params: { name: string
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const { name } = params
+  if (!await canAccessInstance(name, session)) return denied()
+
   const action = req.nextUrl.searchParams.get('action')
 
   if (action === 'qr') {
@@ -43,6 +46,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { name: str
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const { name } = params
+  if (!await canAccessInstance(name, session)) return denied()
+
   const action = req.nextUrl.searchParams.get('action')
 
   if (action === 'logout') {
@@ -61,6 +66,8 @@ export async function POST(req: NextRequest, { params }: { params: { name: strin
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const { name } = params
+  if (!await canAccessInstance(name, session)) return denied()
+
   const body = await req.json()
 
   if (body.action === 'set_webhook') {

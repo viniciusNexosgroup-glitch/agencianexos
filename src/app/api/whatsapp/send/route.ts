@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessInstance, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
   if (!instanceName || !phone || !text) {
     return NextResponse.json({ error: 'instanceName, phone e text são obrigatórios' }, { status: 400 })
   }
+
+  if (!await canAccessInstance(instanceName, session)) return denied()
 
   if (phone.includes('@lid')) {
     return NextResponse.json({ error: 'Contato inválido (dispositivo vinculado)' }, { status: 400 })

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessContact, denied } from '@/lib/tenant'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,8 @@ function supabase() {
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  if (!await canAccessContact(params.id, session)) return denied()
 
   const { follow_up } = await req.json()
 

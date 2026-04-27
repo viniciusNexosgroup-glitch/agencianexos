@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessInstance, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -16,6 +17,7 @@ export async function GET(
 ) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  if (!await canAccessInstance(params.name, session)) return denied()
 
   const db = supabase()
 
@@ -49,6 +51,7 @@ export async function POST(
 ) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  if (!await canAccessInstance(params.name, session)) return denied()
 
   const body = await req.json()
   const { weekday, open_time, close_time, is_active } = body
@@ -91,6 +94,7 @@ export async function PATCH(
 ) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  if (!await canAccessInstance(params.name, session)) return denied()
 
   const body = await req.json()
   const updates: Record<string, unknown> = {}

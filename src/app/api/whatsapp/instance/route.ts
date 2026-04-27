@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createInstance, createCloudApiInstance, listInstances, setWebhook } from '@/lib/evolution'
 import { getSession } from '@/lib/session'
+import { getUserInstanceNames } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -15,7 +16,9 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { data } = await supabase().from('whatsapp_instances').select('*').order('created_at', { ascending: false })
+  let q = supabase().from('whatsapp_instances').select('*').order('created_at', { ascending: false })
+  if (!session.is_admin) q = q.eq('created_by', session.email)
+  const { data } = await q
   return NextResponse.json({ instances: data ?? [] })
 }
 

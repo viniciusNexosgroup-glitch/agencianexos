@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
 import { NextRequest, NextResponse } from 'next/server'
+import { canAccessInstance, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -16,6 +17,8 @@ export async function GET(req: NextRequest) {
 
   const instance_name = req.nextUrl.searchParams.get('instance_name')
   if (!instance_name) return NextResponse.json({ error: 'instance_name obrigatório' }, { status: 400 })
+
+  if (!await canAccessInstance(instance_name, session)) return denied()
 
   const { data, error } = await supabase()
     .from('ai_agents')
@@ -35,6 +38,8 @@ export async function POST(req: NextRequest) {
   const { instance_name, name, provider, model, system_prompt, is_active, handoff_keywords, temperature, api_key } = body
 
   if (!instance_name) return NextResponse.json({ error: 'instance_name obrigatório' }, { status: 400 })
+
+  if (!await canAccessInstance(instance_name, session)) return denied()
 
   const record: Record<string, unknown> = { instance_name, name, provider, model, system_prompt, is_active, handoff_keywords, temperature }
   if (api_key !== undefined) record.api_key = api_key

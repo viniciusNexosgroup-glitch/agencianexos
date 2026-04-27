@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteMessageForEveryone } from '@/lib/evolution'
+import { canAccessInstance, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -16,6 +17,8 @@ export async function DELETE(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const { id, message_id, instance_name, remote_jid, from_me, for_everyone } = await req.json()
+
+  if (instance_name && !await canAccessInstance(instance_name, session)) return denied()
 
   const db = supabase()
 

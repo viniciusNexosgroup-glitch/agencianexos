@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessInstance, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -15,6 +16,8 @@ export async function GET(req: NextRequest, { params }: { params: { name: string
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   const { name } = params
+  if (!await canAccessInstance(name, session)) return denied()
+
   const db = supabase()
 
   // Verifica se já está conectado no banco

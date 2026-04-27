@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessContact, denied } from '@/lib/tenant'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
 
   const contactId = req.nextUrl.searchParams.get('contact_id')
   if (!contactId) return NextResponse.json({ error: 'contact_id obrigatório' }, { status: 400 })
+
+  if (!await canAccessContact(contactId, session)) return denied()
 
   const before = req.nextUrl.searchParams.get('before') // cursor: buscar mais antigas
   const after  = req.nextUrl.searchParams.get('after')  // cursor: buscar mais novas (polling)

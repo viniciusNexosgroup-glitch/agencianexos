@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { getUserInstanceNames } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -55,6 +56,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'CSV vazio ou inválido' }, { status: 400 })
   }
 
+  const allowedInstances = await getUserInstanceNames(session)
+
   let imported = 0
   let skipped = 0
   const errors: string[] = []
@@ -68,6 +71,12 @@ export async function POST(req: NextRequest) {
     const instance_name = resolveField(row, ['instancia', 'instância', 'instance_name', 'instance'])
 
     if (!phone) {
+      skipped++
+      continue
+    }
+
+    if (instance_name && allowedInstances !== null && !allowedInstances.includes(instance_name)) {
+      errors.push(`Linha ${i + 2}: instância '${instance_name}' não autorizada`)
       skipped++
       continue
     }
