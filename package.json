@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "find .next/cache -mindepth 1 -delete 2>/dev/null; next build",
+    "build": "next build",
     "start": "next start",
     "sync": "node scripts/sync-metrics.js"
   },
