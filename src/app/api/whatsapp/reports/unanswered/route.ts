@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { getUserInstanceNames } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -18,13 +19,18 @@ export async function GET(req: NextRequest) {
   const cutoff = new Date(Date.now() - thresholdMin * 60 * 1000).toISOString()
 
   const db = supabase()
+  const names = await getUserInstanceNames(session)
+  if (names !== null && names.length === 0) return NextResponse.json({ contacts: [] })
 
-  const { data: contacts } = await db
+  let contactsQuery = db
     .from('whatsapp_contacts')
     .select('id, name, phone, instance_name, last_message_at')
     .lte('last_message_at', cutoff)
     .order('last_message_at', { ascending: true })
     .limit(50)
+  if (names !== null) contactsQuery = contactsQuery.in('instance_name', names)
+
+  const { data: contacts } = await contactsQuery
 
   if (!contacts || contacts.length === 0) {
     return NextResponse.json({ contacts: [] })

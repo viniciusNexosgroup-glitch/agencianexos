@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .single()
 
   if (flowError || !flow) return NextResponse.json({ error: 'Flow não encontrado' }, { status: 404 })
+  if (!session.is_admin && flow.created_by !== session.sub) return denied()
 
   const [{ data: nodes }, { data: edges }] = await Promise.all([
     db.from('flow_nodes').select('*').eq('flow_id', id).order('created_at', { ascending: true }),
@@ -41,8 +43,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const body = await req.json()
   const db = supabase()
 
-  const { data: flow } = await db.from('flows').select('id').eq('id', id).single()
+  const { data: flow } = await db.from('flows').select('id, created_by').eq('id', id).single()
   if (!flow) return NextResponse.json({ error: 'Flow não encontrado' }, { status: 404 })
+  if (!session.is_admin && flow.created_by !== session.sub) return denied()
 
   const updates: Record<string, unknown> = {}
   if (body.name !== undefined) updates.name = body.name
@@ -75,8 +78,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const db = supabase()
 
-  const { data: flow } = await db.from('flows').select('id, is_active').eq('id', id).single()
+  const { data: flow } = await db.from('flows').select('id, is_active, created_by').eq('id', id).single()
   if (!flow) return NextResponse.json({ error: 'Flow não encontrado' }, { status: 404 })
+  if (!session.is_admin && flow.created_by !== session.sub) return denied()
 
   const { data: updated, error } = await db
     .from('flows')
@@ -96,6 +100,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const { id } = params
   const db = supabase()
+
+  const { data: flow } = await db.from('flows').select('created_by').eq('id', id).single()
+  if (!flow) return NextResponse.json({ error: 'Flow não encontrado' }, { status: 404 })
+  if (!session.is_admin && flow.created_by !== session.sub) return denied()
 
   const { error } = await db.from('flows').delete().eq('id', id)
 

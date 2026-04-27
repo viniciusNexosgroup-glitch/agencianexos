@@ -16,11 +16,15 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { data, error } = await supabase()
+  let q = supabase()
     .from('sequence_enrollments')
     .select('*, whatsapp_contacts(id, name, phone), sequences(id, name)')
     .order('enrolled_at', { ascending: false })
     .limit(200)
+
+  if (!session.is_admin) q = q.eq('enrolled_by', session.sub)
+
+  const { data, error } = await q
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
