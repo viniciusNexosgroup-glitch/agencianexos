@@ -498,9 +498,6 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   // Contagem local de não lidas (rastreada via Realtime, independente do banco)
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({})
 
-  // Quick filter (cards de estatísticas)
-  const [quickFilter, setQuickFilter] = useState<'all' | 'unread' | 'followup'>('all')
-
   // Modais
   const [showImport, setShowImport] = useState(false)
   const [showTagManager, setShowTagManager] = useState(false)
@@ -692,25 +689,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     localStorage.setItem('crm_saved_filters', JSON.stringify(updated))
   }
 
-  const FOLLOWUP_THRESHOLD_MS = 48 * 3600 * 1000
-
-  const countUnread  = contacts.filter(c => (unreadMap[c.id] ?? c.unread_count) > 0).length
-  const countFollowup = contacts.filter(c => {
-    const unread = (unreadMap[c.id] ?? c.unread_count) > 0
-    if (unread) return false
-    if (!c.last_message_at) return false
-    return Date.now() - new Date(c.last_message_at).getTime() > FOLLOWUP_THRESHOLD_MS
-  }).length
-
   const filtered = contacts.filter(c => {
-    // Quick filter dos cards
-    if (quickFilter === 'unread' && (unreadMap[c.id] ?? c.unread_count) === 0) return false
-    if (quickFilter === 'followup') {
-      const unread = (unreadMap[c.id] ?? c.unread_count) > 0
-      if (unread) return false
-      if (!c.last_message_at) return false
-      if (Date.now() - new Date(c.last_message_at).getTime() <= FOLLOWUP_THRESHOLD_MS) return false
-    }
 
     const matchSearch =
       c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -856,31 +835,6 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               ))}
             </div>
           )}
-
-          {/* Cards de estatísticas */}
-          <div className="px-3 py-2 bg-[#111b21] flex gap-2 border-b border-[#222e35]">
-            <button
-              onClick={() => setQuickFilter('all')}
-              className={`flex-1 flex flex-col items-center py-2 rounded-lg transition ${quickFilter === 'all' ? 'bg-[#00a884]/20 border border-[#00a884]/40' : 'bg-[#202c33] hover:bg-[#2a3942]'}`}
-            >
-              <span className="text-white font-bold text-base leading-none">{contacts.length}</span>
-              <span className="text-[#8696a0] text-[9px] mt-0.5 leading-none">Total</span>
-            </button>
-            <button
-              onClick={() => setQuickFilter(quickFilter === 'unread' ? 'all' : 'unread')}
-              className={`flex-1 flex flex-col items-center py-2 rounded-lg transition ${quickFilter === 'unread' ? 'bg-[#00a884]/20 border border-[#00a884]/40' : 'bg-[#202c33] hover:bg-[#2a3942]'}`}
-            >
-              <span className={`font-bold text-base leading-none ${countUnread > 0 ? 'text-[#00a884]' : 'text-white'}`}>{countUnread}</span>
-              <span className="text-[#8696a0] text-[9px] mt-0.5 leading-none">Aguardando</span>
-            </button>
-            <button
-              onClick={() => setQuickFilter(quickFilter === 'followup' ? 'all' : 'followup')}
-              className={`flex-1 flex flex-col items-center py-2 rounded-lg transition ${quickFilter === 'followup' ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-[#202c33] hover:bg-[#2a3942]'}`}
-            >
-              <span className={`font-bold text-base leading-none ${countFollowup > 0 ? 'text-amber-400' : 'text-white'}`}>{countFollowup}</span>
-              <span className="text-[#8696a0] text-[9px] mt-0.5 leading-none">Follow-up</span>
-            </button>
-          </div>
 
           {/* Search */}
           <div className="px-3 py-2 bg-[#111b21]">
