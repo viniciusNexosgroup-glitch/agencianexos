@@ -117,6 +117,38 @@ export function ExportPdfButton({ from, to }: Props) {
           columnStyles: { 0: { cellWidth: 80 } },
         })
         y = (doc as any).lastAutoTable.finalY + 12
+
+        if (meta.creatives?.length > 0) {
+          if (y > pageH - 60) { doc.addPage(); y = 20 }
+
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'bold')
+          doc.setTextColor(...DARK)
+          doc.text('Criativos (por gasto)', 14, y)
+          y += 5
+
+          autoTable(doc, {
+            startY: y,
+            head: [['Criativo', 'Campanha', 'Valor Usado', 'Alcance', 'Resultado', 'Custo/Result.', 'Cliques', 'CTR', 'Frequência']],
+            body: meta.creatives.map((c: any) => [
+              c.ad_name,
+              c.campaign_name,
+              brl(c.spend),
+              fmtInt(c.reach),
+              c.resultado > 0 ? fmtInt(Math.round(c.resultado)) : '—',
+              c.custo_resultado ? brl(c.custo_resultado) : '—',
+              fmtInt(c.clicks),
+              pct(c.ctr),
+              c.frequency > 0 ? c.frequency.toFixed(2) : '—',
+            ]),
+            theme: 'striped',
+            headStyles: { fillColor: ACCENT, textColor: [255, 255, 255], fontSize: 8 },
+            bodyStyles: { fontSize: 7.5 },
+            margin: { left: 14, right: 14 },
+            columnStyles: { 0: { cellWidth: 55 }, 1: { cellWidth: 50 } },
+          })
+          y = (doc as any).lastAutoTable.finalY + 12
+        }
       }
 
       // ── GOOGLE ADS ────────────────────────────────────────────

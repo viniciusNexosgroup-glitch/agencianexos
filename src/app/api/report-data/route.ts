@@ -22,8 +22,12 @@ export async function GET(req: NextRequest) {
 
   const db = supabase()
 
-  const [{ data: metaMetrics }, { data: googleMetrics }, { data: kwMetrics }] = await Promise.all([
+  const [{ data: metaMetrics }, { data: adMetrics }, { data: googleMetrics }, { data: kwMetrics }] = await Promise.all([
     db.from('campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to),
+    db.from('ad_metrics')
+      .select('ad_id,ad_name,campaign_name,impressions,reach,clicks,spend,ctr,purchases,leads,conversations,profile_visits,frequency')
+      .gte('metric_date', from)
+      .lte('metric_date', to),
     db.from('google_campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to),
     db.from('google_keyword_metrics')
       .select('keyword,match_type,campaign_name,impressions,clicks,spend,conversions')
@@ -125,11 +129,51 @@ export async function GET(req: NextRequest) {
     custo_resultado: r.conversions > 0 ? r.spend / r.conversions : null,
   })).sort((a, b) => b.spend - a.spend).slice(0, 30)
 
+  // Aggregate creatives
+  const adMap: Record<string, any> = {}
+  for (const m of adMetrics || []) {
+    const k = m.ad_id
+    if (!adMap[k]) {
+      adMap[k] = {
+        ad_name: m.ad_name, campaign_name: m.campaign_name,
+        spend: 0, reach: 0, clicks: 0, impressions: 0,
+        conversations: 0, leads: 0, purchases: 0, profile_visits: 0, frequency_sum: 0, days: 0,
+      }
+    }
+    adMap[k].spend += Number(m.spend)
+    adMap[k].reach += Number(m.reach)
+    adMap[k].clicks += Number(m.clicks)
+    adMap[k].impressions += Number(m.impressions)
+    adMap[k].conversations += Number(m.conversations || 0)
+    adMap[k].leads += Number(m.leads || 0)
+    adMap[k].purchases += Number(m.purchases || 0)
+    adMap[k].profile_visits += Number(m.profile_visits || 0)
+    adMap[k].frequency_sum += Number(m.frequency || 0)
+    adMap[k].days += 1
+  }
+  const creatives = Object.values(adMap)
+    .filter(a => a.spend > 0)
+    .map(a => {
+      const resultado = a.conversations > 0 ? a.conversations
+        : a.leads > 0 ? a.leads
+        : a.purchases > 0 ? a.purchases
+        : a.profile_visits
+      return {
+        ...a,
+        resultado,
+        ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : 0,
+        custo_resultado: resultado > 0 ? a.spend / resultado : null,
+        frequency: a.days > 0 ? a.frequency_sum / a.days : 0,
+      }
+    })
+    .sort((a, b) => b.spend - a.spend)
+
   return NextResponse.json({
     from, to,
     meta: {
       totals: { ...metaTotals, ctr: metaCtr, custo_resultado: metaCustoResultado },
       campaigns: metaCampaigns,
+      creatives,
     },
     google: {
       totals: { ...googleTotals, ctr: googleCtr, custo_resultado: googleCustoResultado },
