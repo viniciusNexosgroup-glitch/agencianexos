@@ -77,6 +77,7 @@ const NAV = [
     href: '/dashboard/crm?tab=broadcast',
     matchHref: '/dashboard/crm',
     matchTab: 'broadcast',
+    adminOnly: true,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <path d="M22 8.5c0 2.76-4.48 5-10 5S2 11.26 2 8.5 6.48 3.5 12 3.5s10 2.24 10 5z"/>
@@ -90,6 +91,7 @@ const NAV = [
     href: '/dashboard/crm?tab=supervisor',
     matchHref: '/dashboard/crm',
     matchTab: 'supervisor',
+    adminOnly: true,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -101,6 +103,7 @@ const NAV = [
     href: '/dashboard/crm?tab=flows',
     matchHref: '/dashboard/crm',
     matchTab: 'flows',
+    adminOnly: true,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -113,6 +116,7 @@ const NAV = [
     href: '/dashboard/crm?tab=ia',
     matchHref: '/dashboard/crm',
     matchTab: 'ia',
+    adminOnly: true,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -125,6 +129,7 @@ const NAV = [
     href: '/dashboard/crm?tab=departamentos',
     matchHref: '/dashboard/crm',
     matchTab: 'departamentos',
+    adminOnly: true,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>

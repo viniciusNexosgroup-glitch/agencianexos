@@ -25,11 +25,15 @@ function supabase() {
   )
 }
 
+const ADMIN_TABS: CrmTab[] = ['broadcast', 'supervisor', 'flows', 'ia', 'departamentos']
+
 export default async function CrmPage({ searchParams }: { searchParams: { tab?: string } }) {
   const session = await getSession()
   if (!session) redirect('/login')
 
   const tab = (searchParams.tab || 'kanban') as CrmTab
+
+  if (ADMIN_TABS.includes(tab) && !session.is_admin) redirect('/dashboard/crm')
   const db = supabase()
 
   const { data: funnels } = await db
