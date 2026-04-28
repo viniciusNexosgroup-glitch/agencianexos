@@ -77,7 +77,6 @@ const NAV = [
     href: '/dashboard/crm?tab=broadcast',
     matchHref: '/dashboard/crm',
     matchTab: 'broadcast',
-    adminOnly: true,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <path d="M22 8.5c0 2.76-4.48 5-10 5S2 11.26 2 8.5 6.48 3.5 12 3.5s10 2.24 10 5z"/>
@@ -103,7 +102,6 @@ const NAV = [
     href: '/dashboard/crm?tab=flows',
     matchHref: '/dashboard/crm',
     matchTab: 'flows',
-    adminOnly: true,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -116,7 +114,6 @@ const NAV = [
     href: '/dashboard/crm?tab=ia',
     matchHref: '/dashboard/crm',
     matchTab: 'ia',
-    adminOnly: true,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
         <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>

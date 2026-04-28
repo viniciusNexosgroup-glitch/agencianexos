@@ -25,7 +25,7 @@ function supabase() {
   )
 }
 
-const ADMIN_TABS: CrmTab[] = ['broadcast', 'supervisor', 'flows', 'ia', 'departamentos']
+const ADMIN_TABS: CrmTab[] = ['supervisor', 'departamentos']
 
 export default async function CrmPage({ searchParams }: { searchParams: { tab?: string } }) {
   const session = await getSession()
