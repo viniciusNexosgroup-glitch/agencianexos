@@ -19,6 +19,8 @@ interface DailyMetricRow {
   purchase_value: number
   leads: number
   checkouts: number
+  conversations: number
+  profile_visits: number
   frequency: number
 }
 
@@ -76,6 +78,8 @@ export async function syncAccount(
       purchase_value: extractActionValue(item.action_values, 'purchase'),
       leads: extractAction(item.actions, 'lead'),
       checkouts: extractAction(item.actions, 'initiate_checkout'),
+      conversations: extractAction(item.actions, 'onsite_conversion.messaging_conversation_started_7d'),
+      profile_visits: extractAction(item.actions, 'instagram_profile_visit'),
     }))
 
     return { rows }
@@ -107,6 +111,8 @@ interface AdDailyMetricRow {
   purchase_value: number
   leads: number
   checkouts: number
+  conversations: number
+  profile_visits: number
   frequency: number
 }
 
@@ -184,6 +190,8 @@ export async function syncAccountAds(
       purchase_value: extractActionValue(item.action_values, 'purchase'),
       leads: extractAction(item.actions, 'lead'),
       checkouts: extractAction(item.actions, 'initiate_checkout'),
+      conversations: extractAction(item.actions, 'onsite_conversion.messaging_conversation_started_7d'),
+      profile_visits: extractAction(item.actions, 'instagram_profile_visit'),
     }))
 
     return { rows }

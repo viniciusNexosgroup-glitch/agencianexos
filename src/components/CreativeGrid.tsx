@@ -17,6 +17,8 @@ interface Creative {
   purchases: number
   purchase_value: number
   leads: number
+  conversations: number
+  profile_visits: number
   frequency: number
 }
 
@@ -69,7 +71,10 @@ function MetricCol({ label, value, highlight }: { label: string; value: string; 
 }
 
 function CreativeRow({ c }: { c: Creative }) {
-  const resultado = c.leads > 0 ? c.leads : c.purchases
+  const resultado = c.conversations > 0 ? c.conversations
+    : c.leads > 0 ? c.leads
+    : c.purchases > 0 ? c.purchases
+    : c.profile_visits
   const custoResultado = resultado > 0 ? c.spend / resultado : null
 
   return (

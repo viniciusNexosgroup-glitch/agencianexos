@@ -177,12 +177,18 @@ export default async function DashboardPage({
       purchase_value: acc.purchase_value + Number(m.purchase_value),
       leads: acc.leads + Number(m.leads),
       checkouts: acc.checkouts + Number(m.checkouts),
+      conversations: acc.conversations + Number((m as any).conversations || 0),
+      profile_visits: acc.profile_visits + Number((m as any).profile_visits || 0),
     }),
-    { spend: 0, impressions: 0, reach: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0, checkouts: 0 }
+    { spend: 0, impressions: 0, reach: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0, checkouts: 0, conversations: 0, profile_visits: 0 }
   )
 
   const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
-  const resultado = totals.leads > 0 ? totals.leads : totals.purchases
+  // Prioridade: conversas > leads > compras > visitas ao perfil
+  const resultado = totals.conversations > 0 ? totals.conversations
+    : totals.leads > 0 ? totals.leads
+    : totals.purchases > 0 ? totals.purchases
+    : totals.profile_visits
   const custoResultado = resultado > 0 ? totals.spend / resultado : null
 
   const spendByDay: Record<string, number> = {}
@@ -239,7 +245,7 @@ export default async function DashboardPage({
         adset_name: m.adset_name, thumbnail_url: m.thumbnail_url,
         effective_status: m.effective_status, last_date: m.metric_date,
         spend: 0, impressions: 0, reach: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0,
-        frequency_sum: 0, days: 0,
+        conversations: 0, profile_visits: 0, frequency_sum: 0, days: 0,
       }
     }
     adMap[k].spend += Number(m.spend)
@@ -249,6 +255,8 @@ export default async function DashboardPage({
     adMap[k].purchases += Number(m.purchases)
     adMap[k].purchase_value += Number(m.purchase_value)
     adMap[k].leads += Number(m.leads)
+    adMap[k].conversations += Number((m as any).conversations || 0)
+    adMap[k].profile_visits += Number((m as any).profile_visits || 0)
     adMap[k].frequency_sum += Number(m.frequency)
     adMap[k].days += 1
     if (m.metric_date >= adMap[k].last_date) {
