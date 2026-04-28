@@ -62,6 +62,14 @@ function StorageBar({ usedBytes }: { usedBytes: number }) {
 export function AdminPanel({ clients, allAccounts, syncLogs }: Props) {
   const [tab, setTab] = useState<'clients' | 'sync' | 'storage'>('clients')
 
+  // ── Create user form ────────────────────────────────────────────────────────
+  const [newEmail, setNewEmail] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [createMsg, setCreateMsg] = useState<{ text: string; ok: boolean; sql?: string } | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [showSql, setShowSql] = useState(false)
+
   // ── Invite / account forms ──────────────────────────────────────────────────
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteName, setInviteName] = useState('')
@@ -108,6 +116,26 @@ export function AdminPanel({ clients, allAccounts, syncLogs }: Props) {
   useEffect(() => {
     if (tab === 'storage') loadStorage()
   }, [tab, loadStorage])
+
+  async function createUser(e: React.FormEvent) {
+    e.preventDefault()
+    setCreating(true); setCreateMsg(null); setShowSql(false)
+    const res = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newEmail, name: newName, password: newPassword }),
+    })
+    const json = await res.json()
+    if (res.ok) {
+      setCreateMsg({ text: json.message, ok: true })
+      setNewEmail(''); setNewName(''); setNewPassword('')
+    } else if (res.status === 422 && json.sql) {
+      setCreateMsg({ text: 'Criação automática falhou. Copie o SQL abaixo e execute no Supabase SQL Editor:', ok: false, sql: json.sql })
+    } else {
+      setCreateMsg({ text: json.error, ok: false })
+    }
+    setCreating(false)
+  }
 
   async function inviteClient(e: React.FormEvent) {
     e.preventDefault()
@@ -211,31 +239,52 @@ export function AdminPanel({ clients, allAccounts, syncLogs }: Props) {
       {tab === 'clients' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4">
-            <h2 className="text-white font-semibold">Convidar novo cliente</h2>
-            <form onSubmit={inviteClient} className="space-y-3">
+            <h2 className="text-white font-semibold">Criar novo usuário</h2>
+            <form onSubmit={createUser} className="space-y-3">
               <input
-                placeholder="Nome do cliente"
-                value={inviteName}
-                onChange={e => setInviteName(e.target.value)}
+                placeholder="Nome completo"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
                 required
                 className="w-full bg-[#0f172a] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <input
                 type="email"
-                placeholder="Email do cliente"
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
+                placeholder="Email"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
                 required
+                className="w-full bg-[#0f172a] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                type="password"
+                placeholder="Senha (mín. 6 caracteres)"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                required
+                minLength={6}
                 className="w-full bg-[#0f172a] border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <button
                 type="submit"
-                disabled={inviting}
+                disabled={creating}
                 className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded-lg py-2 text-sm transition"
               >
-                {inviting ? 'Enviando...' : 'Enviar convite'}
+                {creating ? 'Criando...' : 'Criar usuário'}
               </button>
-              {inviteMsg && <p className="text-sm text-center text-emerald-400">{inviteMsg}</p>}
+              {createMsg && (
+                <div>
+                  <p className={`text-sm text-center ${createMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{createMsg.text}</p>
+                  {createMsg.sql && (
+                    <div className="mt-2">
+                      <button onClick={() => setShowSql(v => !v)} className="text-xs text-slate-400 underline">{showSql ? 'Ocultar SQL' : 'Ver SQL'}</button>
+                      {showSql && (
+                        <pre className="mt-2 p-3 bg-[#0f172a] rounded-lg text-xs text-slate-300 overflow-x-auto whitespace-pre-wrap">{createMsg.sql}</pre>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </form>
           </div>
 
