@@ -47,13 +47,28 @@ export async function POST(req: NextRequest) {
     else synced += kwRows.length
   }
 
-  // Search terms
+  // Search terms — aggregate duplicates (same term in multiple ad groups)
   const { rows: stRows, error: stErr } = await syncGoogleSearchTerms(customerId, from, to)
   if (stErr) { errors.push(`search_terms: ${stErr}`) }
   else if (stRows.length > 0) {
-    const { error: e } = await db.from('google_search_term_metrics').upsert(stRows, { onConflict: 'customer_id,search_term,campaign_name,metric_date' })
+    const stMap: Record<string, typeof stRows[0]> = {}
+    for (const r of stRows) {
+      const k = `${r.customer_id}__${r.search_term}__${r.campaign_name}__${r.metric_date}`
+      if (!stMap[k]) { stMap[k] = { ...r } }
+      else {
+        stMap[k].impressions += r.impressions
+        stMap[k].clicks += r.clicks
+        stMap[k].spend += r.spend
+        stMap[k].conversions += r.conversions
+      }
+    }
+    const deduped = Object.values(stMap).map(r => ({
+      ...r,
+      ctr: r.impressions > 0 ? r.clicks / r.impressions : 0,
+    }))
+    const { error: e } = await db.from('google_search_term_metrics').upsert(deduped, { onConflict: 'customer_id,search_term,campaign_name,metric_date' })
     if (e) errors.push(`search_terms: ${e.message}`)
-    else synced += stRows.length
+    else synced += deduped.length
   }
 
   return NextResponse.json({ message: `Google Ads sync: ${synced} registros.`, synced, errors })
