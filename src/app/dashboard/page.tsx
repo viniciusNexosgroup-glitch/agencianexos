@@ -11,6 +11,7 @@ import { CreativeToolbar } from '@/components/CreativeToolbar'
 import { GoogleCampaignTable } from '@/components/GoogleCampaignTable'
 import { GoogleKeywordTable } from '@/components/GoogleKeywordTable'
 import { ExportPdfButton } from '@/components/ExportPdfButton'
+import { DiscoverAccountsButton } from '@/components/DiscoverAccountsButton'
 import { DateRangePicker } from '@/components/DateRangePicker'
 import { DashboardTabs } from '@/components/DashboardTabs'
 
@@ -359,6 +360,7 @@ export default async function DashboardPage({
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-3">
+              <DiscoverAccountsButton compact />
               <ExportPdfButton from={from} to={to} />
               <DateRangePicker
                 defaultFrom={from}
