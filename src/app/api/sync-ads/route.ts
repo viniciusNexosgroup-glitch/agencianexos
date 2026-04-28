@@ -23,16 +23,21 @@ export async function POST(req: NextRequest) {
 
   const db = supabase()
 
-  const { data: accounts } = await db
-    .from('client_accounts')
-    .select('ad_account_id')
-    .eq('is_active', true)
+  // If a specific accountId is provided, sync only that account
+  let uniqueIds: string[]
+  if (body.accountId) {
+    uniqueIds = [body.accountId]
+  } else {
+    const { data: accounts } = await db
+      .from('client_accounts')
+      .select('ad_account_id')
+      .eq('is_active', true)
 
-  if (!accounts || accounts.length === 0) {
-    return NextResponse.json({ message: 'Nenhuma conta ativa.' })
+    if (!accounts || accounts.length === 0) {
+      return NextResponse.json({ message: 'Nenhuma conta ativa.' })
+    }
+    uniqueIds = [...new Set(accounts.map((a: { ad_account_id: string }) => a.ad_account_id))]
   }
-
-  const uniqueIds = [...new Set(accounts.map((a: { ad_account_id: string }) => a.ad_account_id))]
   let campaignsSynced = 0
   let adsSynced = 0
   const errors: string[] = []

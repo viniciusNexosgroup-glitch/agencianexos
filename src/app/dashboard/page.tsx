@@ -367,7 +367,7 @@ export default async function DashboardPage({
                 selectedAccount={selectedAccountId}
               />
             </div>
-            <CreativeToolbar from={from} to={to} activeFilter={creativeFilter} />
+            <CreativeToolbar from={from} to={to} activeFilter={creativeFilter} accountId={selectedAccountId} />
           </div>
         </div>
 

@@ -7,9 +7,10 @@ interface Props {
   from: string
   to: string
   activeFilter: 'all' | 'active'
+  accountId?: string
 }
 
-export function CreativeToolbar({ from, to, activeFilter }: Props) {
+export function CreativeToolbar({ from, to, activeFilter, accountId }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [syncing, setSyncing] = useState(false)
@@ -27,7 +28,7 @@ export function CreativeToolbar({ from, to, activeFilter }: Props) {
       await fetch('/api/sync-ads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, to }),
+        body: JSON.stringify({ from, to, accountId }),
       })
       setDone(true)
       setTimeout(() => router.refresh(), 1000)
