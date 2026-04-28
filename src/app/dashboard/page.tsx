@@ -316,14 +316,14 @@ export default async function DashboardPage({
             </div>
 
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
-              <h3 className="text-white font-semibold mb-1">Criativos</h3>
-              <p className="text-slate-400 text-sm mb-6">{from} → {to}</p>
-              <CreativeGrid creatives={creativeRows} from={from} to={to} />
+              <h3 className="text-white font-semibold mb-6">Campanhas ({campaignRows.length})</h3>
+              <CampaignTable rows={campaignRows} />
             </div>
 
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
-              <h3 className="text-white font-semibold mb-6">Campanhas ({campaignRows.length})</h3>
-              <CampaignTable rows={campaignRows} />
+              <h3 className="text-white font-semibold mb-1">Criativos</h3>
+              <p className="text-slate-400 text-sm mb-6">{from} → {to}</p>
+              <CreativeGrid creatives={creativeRows} from={from} to={to} />
             </div>
           </>
         )}
