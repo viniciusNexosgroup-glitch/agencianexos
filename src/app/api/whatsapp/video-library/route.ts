@@ -21,22 +21,29 @@ export async function GET() {
   const { data: categories, error: catError } = await db
     .from('video_categories')
     .select('*')
+    .eq('created_by', session.sub)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
 
   if (catError) return NextResponse.json({ error: catError.message }, { status: 500 })
 
-  const { data: videos, error: vidError } = await db
-    .from('category_videos')
-    .select('*')
-    .order('sort_order', { ascending: true })
-    .order('created_at', { ascending: true })
+  const categoryIds = (categories ?? []).map(c => c.id)
 
-  if (vidError) return NextResponse.json({ error: vidError.message }, { status: 500 })
+  let videos: any[] = []
+  if (categoryIds.length > 0) {
+    const { data, error: vidError } = await db
+      .from('category_videos')
+      .select('*')
+      .in('category_id', categoryIds)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+    if (vidError) return NextResponse.json({ error: vidError.message }, { status: 500 })
+    videos = data ?? []
+  }
 
   const result = (categories ?? []).map(cat => ({
     ...cat,
-    videos: (videos ?? []).filter(v => v.category_id === cat.id),
+    videos: videos.filter(v => v.category_id === cat.id),
   }))
 
   return NextResponse.json({ categories: result })
@@ -51,7 +58,7 @@ export async function POST(req: Request) {
 
   const { data, error } = await supabase()
     .from('video_categories')
-    .insert({ name: name.trim() })
+    .insert({ name: name.trim(), created_by: session.sub })
     .select()
     .single()
 

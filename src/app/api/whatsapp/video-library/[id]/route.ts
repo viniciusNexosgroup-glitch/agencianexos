@@ -20,6 +20,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     .from('video_categories')
     .delete()
     .eq('id', params.id)
+    .eq('created_by', session.sub)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -37,6 +38,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .from('video_categories')
     .update({ name: name.trim() })
     .eq('id', params.id)
+    .eq('created_by', session.sub)
     .select()
     .single()
 
