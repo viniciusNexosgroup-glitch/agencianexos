@@ -203,9 +203,7 @@ export default async function DashboardPage({
 
   const allAccounts = accounts || []
   const selectedAccountId = params.account || allAccounts[0]?.ad_account_id || ''
-  const accountIds = client?.is_admin
-    ? allAccounts.map(a => a.ad_account_id)
-    : [selectedAccountId]
+  const accountIds = [selectedAccountId].filter(Boolean)
 
   const { data: metrics } = await supabase
     .from('campaign_metrics')
