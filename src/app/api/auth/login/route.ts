@@ -21,10 +21,10 @@ export async function POST(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Buscar usuário diretamente no banco (bypassa GoTrue)
+  // Buscar usuário diretamente no banco
   const { data: users, error } = await supabase
     .from('clients')
-    .select('id, name, email, is_admin')
+    .select('id, name, email, is_admin, password_hash')
     .eq('email', email)
     .single()
 
@@ -32,15 +32,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Email ou senha incorretos' }, { status: 401 })
   }
 
-  // Buscar hash da senha em auth.users via RPC
-  const { data: authData, error: authError } = await supabase
-    .rpc('get_encrypted_password', { user_email: email })
+  let valid = false
 
-  if (authError || !authData) {
-    return NextResponse.json({ error: 'Email ou senha incorretos' }, { status: 401 })
+  // Verificar senha: primeiro tenta password_hash local, depois auth.users via RPC
+  if ((users as any).password_hash) {
+    valid = await bcrypt.compare(password, (users as any).password_hash)
+  } else {
+    const { data: authData } = await supabase
+      .rpc('get_encrypted_password', { user_email: email })
+    if (authData) valid = await bcrypt.compare(password, authData)
   }
 
-  const valid = await bcrypt.compare(password, authData)
   if (!valid) {
     return NextResponse.json({ error: 'Email ou senha incorretos' }, { status: 401 })
   }
