@@ -212,6 +212,47 @@ export async function sendTextWithQuote(
   return res.json()
 }
 
+export async function fetchAllGroups(instanceName: string): Promise<{ id: string; subject: string }[]> {
+  try {
+    const res = await fetch(`${BASE_URL}/group/fetchAllGroups/${instanceName}?getParticipants=false`, {
+      headers: headers(),
+      signal: timeout(),
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (Array.isArray(data) ? data : []).map((g: any) => ({ id: g.id, subject: g.subject }))
+  } catch {
+    return []
+  }
+}
+
+export async function sendDocument(
+  instanceName: string,
+  to: string,
+  base64: string,
+  filename: string,
+  caption = ''
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/message/sendMedia/${instanceName}`, {
+      method: 'POST',
+      headers: headers(),
+      signal: timeout(30000),
+      body: JSON.stringify({
+        number: to,
+        mediatype: 'document',
+        mimetype: 'application/pdf',
+        media: base64,
+        fileName: filename,
+        caption,
+      }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export async function getMediaBase64(
   instanceName: string,
   message: unknown
