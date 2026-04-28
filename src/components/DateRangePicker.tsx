@@ -48,18 +48,21 @@ export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAcco
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-wrap">
       {/* Seletor de conta */}
-      {accounts.length > 1 && (
-        <select
-          value={account}
-          onChange={e => { setAccount(e.target.value); apply(from, to, e.target.value) }}
-          className="bg-[#1e293b] border border-slate-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          {accounts.map(a => (
-            <option key={a.ad_account_id} value={a.ad_account_id}>
-              {a.account_name || a.ad_account_id}
-            </option>
-          ))}
-        </select>
+      {accounts.length >= 1 && (
+        <div className="flex items-center gap-2">
+          <span className="text-slate-500 text-xs whitespace-nowrap">Conta:</span>
+          <select
+            value={account}
+            onChange={e => { setAccount(e.target.value); apply(from, to, e.target.value) }}
+            className="bg-[#1e293b] border border-slate-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[220px] truncate"
+          >
+            {accounts.map(a => (
+              <option key={a.ad_account_id} value={a.ad_account_id}>
+                {a.account_name || a.ad_account_id}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       {/* Presets */}

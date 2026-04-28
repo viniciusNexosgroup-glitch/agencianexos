@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { DiscoverAccountsButton } from '@/components/DiscoverAccountsButton'
 
 interface Client { id: string; name: string; email: string; is_admin: boolean; created_at: string }
 interface Account { id: string; client_id: string; ad_account_id: string; account_name: string; bm_name: string; is_active: boolean }
@@ -239,7 +240,12 @@ export function AdminPanel({ clients, allAccounts, syncLogs }: Props) {
           </div>
 
           <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4">
-            <h2 className="text-white font-semibold">Vincular conta de anúncio</h2>
+            <h2 className="text-white font-semibold">Descobrir contas Meta automaticamente</h2>
+            <DiscoverAccountsButton />
+          </div>
+
+          <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 space-y-4">
+            <h2 className="text-white font-semibold">Vincular conta de anúncio manualmente</h2>
             <form onSubmit={addAccount} className="space-y-3">
               <select
                 value={accountClientId}
