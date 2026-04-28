@@ -177,8 +177,8 @@ export default async function DashboardPage({
       purchase_value: acc.purchase_value + Number(m.purchase_value),
       leads: acc.leads + Number(m.leads),
       checkouts: acc.checkouts + Number(m.checkouts),
-      conversations: acc.conversations + Number((m as any).conversations || 0),
-      profile_visits: acc.profile_visits + Number((m as any).profile_visits || 0),
+      conversations: acc.conversations + Number((m as Record<string, any>).conversations || 0),
+      profile_visits: acc.profile_visits + Number((m as Record<string, any>).profile_visits || 0),
     }),
     { spend: 0, impressions: 0, reach: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0, checkouts: 0, conversations: 0, profile_visits: 0 }
   )
@@ -231,7 +231,7 @@ export default async function DashboardPage({
   // Ad-level metrics (creatives)
   const { data: adMetrics } = await supabase
     .from('ad_metrics')
-    .select('ad_id, ad_name, campaign_name, adset_name, thumbnail_url, effective_status, metric_date, impressions, reach, clicks, spend, ctr, cpc, cpm, purchases, purchase_value, leads, checkouts, frequency')
+    .select('ad_id, ad_name, campaign_name, adset_name, thumbnail_url, effective_status, metric_date, impressions, reach, clicks, spend, ctr, cpc, cpm, purchases, purchase_value, leads, checkouts, conversations, profile_visits, frequency')
     .in('ad_account_id', accountIds)
     .gte('metric_date', from)
     .lte('metric_date', to)
@@ -255,8 +255,8 @@ export default async function DashboardPage({
     adMap[k].purchases += Number(m.purchases)
     adMap[k].purchase_value += Number(m.purchase_value)
     adMap[k].leads += Number(m.leads)
-    adMap[k].conversations += Number((m as any).conversations || 0)
-    adMap[k].profile_visits += Number((m as any).profile_visits || 0)
+    adMap[k].conversations += Number(m.conversations || 0)
+    adMap[k].profile_visits += Number(m.profile_visits || 0)
     adMap[k].frequency_sum += Number(m.frequency)
     adMap[k].days += 1
     if (m.metric_date >= adMap[k].last_date) {
