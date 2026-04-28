@@ -204,29 +204,38 @@ export default async function DashboardPage({
     if (!campaignMap[k]) {
       campaignMap[k] = {
         campaign_id: k, campaign_name: m.campaign_name,
-        spend: 0, impressions: 0, clicks: 0,
-        purchases: 0, purchase_value: 0, leads: 0, checkouts: 0, frequency_sum: 0, days: 0,
+        spend: 0, impressions: 0, reach: 0, clicks: 0,
+        purchases: 0, purchase_value: 0, leads: 0, checkouts: 0,
+        conversations: 0, profile_visits: 0, frequency_sum: 0, days: 0,
       }
     }
     campaignMap[k].spend += Number(m.spend)
     campaignMap[k].impressions += Number(m.impressions)
+    campaignMap[k].reach += Number(m.reach)
     campaignMap[k].clicks += Number(m.clicks)
     campaignMap[k].purchases += Number(m.purchases)
     campaignMap[k].purchase_value += Number(m.purchase_value)
     campaignMap[k].leads += Number(m.leads)
     campaignMap[k].checkouts += Number(m.checkouts)
+    campaignMap[k].conversations += Number((m as Record<string, any>).conversations || 0)
+    campaignMap[k].profile_visits += Number((m as Record<string, any>).profile_visits || 0)
     campaignMap[k].frequency_sum += Number(m.frequency)
     campaignMap[k].days += 1
   }
 
-  const campaignRows = Object.values(campaignMap).map(c => ({
-    ...c,
-    ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
-    cpc: c.clicks > 0 ? c.spend / c.clicks : null,
-    cpm: c.impressions > 0 ? (c.spend / c.impressions) * 1000 : null,
-    roas: c.spend > 0 ? c.purchase_value / c.spend : 0,
-    frequency: c.days > 0 ? c.frequency_sum / c.days : 0,
-  })).sort((a, b) => b.spend - a.spend)
+  const campaignRows = Object.values(campaignMap).map(c => {
+    const resultado = c.conversations > 0 ? c.conversations
+      : c.leads > 0 ? c.leads
+      : c.purchases > 0 ? c.purchases
+      : c.profile_visits
+    return {
+      ...c,
+      ctr: c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0,
+      frequency: c.days > 0 ? c.frequency_sum / c.days : 0,
+      resultado,
+      custo_resultado: resultado > 0 ? c.spend / resultado : null,
+    }
+  }).sort((a, b) => b.spend - a.spend)
 
   // Ad-level metrics (creatives)
   const { data: adMetrics } = await supabase

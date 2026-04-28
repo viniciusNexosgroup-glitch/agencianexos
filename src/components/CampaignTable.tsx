@@ -6,14 +6,11 @@ interface CampaignRow {
   campaign_id: string
   campaign_name: string
   spend: number
-  impressions: number
+  reach: number
+  resultado: number
+  custo_resultado: number | null
   clicks: number
   ctr: number
-  cpc: number | null
-  cpm: number | null
-  roas: number
-  purchases: number
-  leads: number
   frequency: number
 }
 
@@ -24,29 +21,20 @@ function fmt(n: number) { return n.toLocaleString('pt-BR', { minimumFractionDigi
 function fmtInt(n: number) { return n.toLocaleString('pt-BR') }
 
 const columns: { key: SortKey; label: string; render: (r: CampaignRow) => string }[] = [
-  { key: 'campaign_name', label: 'Campanha', render: r => r.campaign_name || r.campaign_id },
-  { key: 'spend',        label: 'Gasto (R$)',    render: r => fmt(r.spend) },
-  { key: 'impressions',  label: 'Impressões',    render: r => fmtInt(r.impressions) },
-  { key: 'clicks',       label: 'Cliques',       render: r => fmtInt(r.clicks) },
-  { key: 'ctr',          label: 'CTR (%)',        render: r => r.ctr.toFixed(2) + '%' },
-  { key: 'cpc',          label: 'CPC (R$)',       render: r => r.cpc ? fmt(r.cpc) : '—' },
-  { key: 'cpm',          label: 'CPM (R$)',       render: r => r.cpm ? fmt(r.cpm) : '—' },
-  { key: 'roas',         label: 'ROAS',           render: r => r.roas > 0 ? r.roas.toFixed(2) + 'x' : '—' },
-  { key: 'purchases',    label: 'Vendas',         render: r => fmtInt(r.purchases) },
-  { key: 'leads',        label: 'Leads',          render: r => fmtInt(r.leads) },
-  { key: 'frequency',    label: 'Frequência',     render: r => r.frequency.toFixed(2) },
+  { key: 'campaign_name',   label: 'Campanha',          render: r => r.campaign_name || r.campaign_id },
+  { key: 'spend',           label: 'Valor usado',        render: r => `R$ ${fmt(r.spend)}` },
+  { key: 'reach',           label: 'Alcance',            render: r => fmtInt(r.reach) },
+  { key: 'resultado',       label: 'Resultado',          render: r => r.resultado > 0 ? fmtInt(r.resultado) : '—' },
+  { key: 'custo_resultado', label: 'Custo/Resultado',    render: r => r.custo_resultado ? `R$ ${fmt(r.custo_resultado)}` : '—' },
+  { key: 'clicks',          label: 'Cliques',            render: r => fmtInt(r.clicks) },
+  { key: 'ctr',             label: 'CTR',                render: r => r.ctr.toFixed(2) + '%' },
+  { key: 'frequency',       label: 'Frequência',         render: r => r.frequency.toFixed(2) },
 ]
 
 function ctrColor(ctr: number) {
   if (ctr >= 2) return 'text-emerald-400'
   if (ctr >= 1) return 'text-amber-400'
   return 'text-red-400'
-}
-
-function roasColor(roas: number) {
-  if (roas >= 3) return 'text-emerald-400'
-  if (roas > 0) return 'text-amber-400'
-  return 'text-slate-500'
 }
 
 export function CampaignTable({ rows }: { rows: CampaignRow[] }) {
@@ -94,11 +82,19 @@ export function CampaignTable({ rows }: { rows: CampaignRow[] }) {
               {columns.map(col => {
                 const val = col.render(row)
                 let cls = 'px-3 py-3 text-slate-300 whitespace-nowrap'
-                if (col.key === 'campaign_name') cls = 'px-3 py-3 text-white font-medium max-w-[220px] truncate'
-                if (col.key === 'ctr') cls += ' ' + ctrColor(row.ctr)
-                if (col.key === 'roas') cls += ' ' + roasColor(row.roas)
+                if (col.key === 'campaign_name') cls = 'px-3 py-3 text-white font-medium max-w-[260px] truncate'
                 if (col.key === 'spend') cls = 'px-3 py-3 text-indigo-300 font-medium whitespace-nowrap'
-                return <td key={col.key} className={cls} title={col.key === 'campaign_name' ? row.campaign_name : undefined}>{val}</td>
+                if (col.key === 'ctr') cls += ' ' + ctrColor(row.ctr)
+                if (col.key === 'resultado' && row.resultado > 0) cls += ' text-emerald-400 font-medium'
+                return (
+                  <td
+                    key={col.key}
+                    className={cls}
+                    title={col.key === 'campaign_name' ? row.campaign_name : undefined}
+                  >
+                    {val}
+                  </td>
+                )
               })}
             </tr>
           ))}
