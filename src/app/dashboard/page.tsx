@@ -10,6 +10,7 @@ import { CreativeGrid } from '@/components/CreativeGrid'
 import { CreativeToolbar } from '@/components/CreativeToolbar'
 import { GoogleCampaignTable } from '@/components/GoogleCampaignTable'
 import { GoogleKeywordTable } from '@/components/GoogleKeywordTable'
+import { ExportPdfButton } from '@/components/ExportPdfButton'
 import { DateRangePicker } from '@/components/DateRangePicker'
 import { DashboardTabs } from '@/components/DashboardTabs'
 
@@ -157,7 +158,10 @@ export default async function DashboardPage({
               <DashboardTabs active="google" />
               <h2 className="text-white text-xl font-semibold">Google Ads — Conta {process.env.GOOGLE_ADS_CUSTOMER_ID}</h2>
             </div>
-            <DateRangePicker defaultFrom={from} defaultTo={to} accounts={[]} selectedAccount="" />
+            <div className="flex items-center gap-3">
+              <ExportPdfButton from={from} to={to} />
+              <DateRangePicker defaultFrom={from} defaultTo={to} accounts={[]} selectedAccount="" />
+            </div>
           </div>
 
           {gRows.length === 0 ? (
@@ -354,12 +358,15 @@ export default async function DashboardPage({
             </div>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <DateRangePicker
-              defaultFrom={from}
-              defaultTo={to}
-              accounts={allAccounts}
-              selectedAccount={selectedAccountId}
-            />
+            <div className="flex items-center gap-3">
+              <ExportPdfButton from={from} to={to} />
+              <DateRangePicker
+                defaultFrom={from}
+                defaultTo={to}
+                accounts={allAccounts}
+                selectedAccount={selectedAccountId}
+              />
+            </div>
             <CreativeToolbar from={from} to={to} activeFilter={creativeFilter} />
           </div>
         </div>
