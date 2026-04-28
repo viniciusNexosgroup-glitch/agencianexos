@@ -6,6 +6,7 @@ import { getSession } from '@/lib/session'
 import { MetricCard } from '@/components/MetricCard'
 import { SpendChart } from '@/components/SpendChart'
 import { CampaignTable } from '@/components/CampaignTable'
+import { CreativeGrid } from '@/components/CreativeGrid'
 import { GoogleCampaignTable } from '@/components/GoogleCampaignTable'
 import { DateRangePicker } from '@/components/DateRangePicker'
 import { DashboardTabs } from '@/components/DashboardTabs'
@@ -220,6 +221,48 @@ export default async function DashboardPage({
     frequency: c.days > 0 ? c.frequency_sum / c.days : 0,
   })).sort((a, b) => b.spend - a.spend)
 
+  // Ad-level metrics (creatives)
+  const { data: adMetrics } = await supabase
+    .from('ad_metrics')
+    .select('ad_id, ad_name, campaign_name, adset_name, thumbnail_url, effective_status, metric_date, impressions, reach, clicks, spend, ctr, cpc, cpm, purchases, purchase_value, leads, checkouts, frequency')
+    .in('ad_account_id', accountIds)
+    .gte('metric_date', from)
+    .lte('metric_date', to)
+
+  const adMap: Record<string, any> = {}
+  for (const m of adMetrics || []) {
+    const k = m.ad_id
+    if (!adMap[k]) {
+      adMap[k] = {
+        ad_id: k, ad_name: m.ad_name, campaign_name: m.campaign_name,
+        adset_name: m.adset_name, thumbnail_url: m.thumbnail_url,
+        effective_status: m.effective_status, last_date: m.metric_date,
+        spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0,
+      }
+    }
+    adMap[k].spend += Number(m.spend)
+    adMap[k].impressions += Number(m.impressions)
+    adMap[k].clicks += Number(m.clicks)
+    adMap[k].purchases += Number(m.purchases)
+    adMap[k].purchase_value += Number(m.purchase_value)
+    adMap[k].leads += Number(m.leads)
+    if (m.metric_date >= adMap[k].last_date) {
+      adMap[k].last_date = m.metric_date
+      if (m.thumbnail_url) adMap[k].thumbnail_url = m.thumbnail_url
+      if (m.effective_status) adMap[k].effective_status = m.effective_status
+    }
+  }
+  const creativeRows = Object.values(adMap)
+    .filter(a => a.spend > 0)
+    .map(a => ({
+      ...a,
+      ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : 0,
+      cpc: a.clicks > 0 ? a.spend / a.clicks : null,
+      cpm: a.impressions > 0 ? (a.spend / a.impressions) * 1000 : null,
+      roas: a.spend > 0 ? a.purchase_value / a.spend : 0,
+    }))
+    .sort((a, b) => b.spend - a.spend)
+
   const { data: lastSync } = await supabase
     .from('sync_logs')
     .select('created_at')
@@ -272,9 +315,9 @@ export default async function DashboardPage({
             </div>
 
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
-              <h3 className="text-white font-semibold mb-1">Gasto diário</h3>
+              <h3 className="text-white font-semibold mb-1">Criativos</h3>
               <p className="text-slate-400 text-sm mb-6">{from} → {to}</p>
-              <SpendChart data={spendChartData} />
+              <CreativeGrid creatives={creativeRows} />
             </div>
 
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
