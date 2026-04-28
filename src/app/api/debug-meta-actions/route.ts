@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
         fields: 'ad_id,ad_name,campaign_name,actions,action_values',
         level: 'ad',
         time_range: JSON.stringify({ since: from, until: to }),
-        time_increment: 'all',
+        time_increment: 'all_days',
         limit: '10',
       },
     })
