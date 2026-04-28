@@ -317,7 +317,7 @@ export default async function DashboardPage({
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
               <h3 className="text-white font-semibold mb-1">Criativos</h3>
               <p className="text-slate-400 text-sm mb-6">{from} → {to}</p>
-              <CreativeGrid creatives={creativeRows} />
+              <CreativeGrid creatives={creativeRows} from={from} to={to} />
             </div>
 
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
