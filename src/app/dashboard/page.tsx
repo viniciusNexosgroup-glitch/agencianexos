@@ -46,6 +46,8 @@ export default async function DashboardPage({
     .eq('id', session.sub)
     .single()
 
+  if (!client?.is_admin) redirect('/dashboard/crm')
+
   const from = params.from || daysAgo(30)
   const to = params.to || new Date().toISOString().split('T')[0]
 
