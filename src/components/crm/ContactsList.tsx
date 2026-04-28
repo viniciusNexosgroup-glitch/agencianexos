@@ -517,15 +517,13 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   }, [])
 
   const chatContactRef = useRef<Contact | null>(null)
+  const allowedInstancesRef = useRef<Set<string>>(new Set())
 
   async function fetchContacts() {
-    const { data } = await createBrowserClient()
-      .from('whatsapp_contacts')
-      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url')
-      .not('phone', 'like', '%@lid')
-      .not('phone', 'eq', 'status@broadcast')
-      .order('last_message_at', { ascending: false })
-    return data ?? []
+    const res = await fetch('/api/whatsapp/contacts')
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.contacts ?? []
   }
 
   // Carrega TODAS as tags de contatos via rota server-side (service role — sem problema de RLS)
@@ -588,7 +586,11 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     load()
     fetchTags()
     fetchAllContactTags()
-    fetch('/api/whatsapp/instance').then(r => r.json()).then(d => setInstances(d.instances ?? d ?? []))
+    fetch('/api/whatsapp/instance').then(r => r.json()).then(d => {
+      const list = d.instances ?? d ?? []
+      setInstances(list)
+      allowedInstancesRef.current = new Set(list.map((i: any) => i.instance_name as string))
+    })
     try {
       const saved = JSON.parse(localStorage.getItem('crm_saved_filters') || '[]')
       setSavedFilters(saved)
@@ -602,6 +604,9 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
         // Atualiza apenas o contato que mudou sem rebuscar tudo
         if (payload.new && typeof payload.new === 'object') {
           const updated = payload.new as any
+          // Ignora contatos de instâncias que não pertencem ao usuário
+          const allowed = allowedInstancesRef.current
+          if (allowed.size > 0 && !allowed.has(updated.instance_name)) return
           setContacts(prev => {
             const exists = prev.some(c => c.id === updated.id)
             const currentId = chatContactRef.current?.id
@@ -748,15 +753,12 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     // Busca primeiro nos contatos já carregados
     const existing = contacts.find(c => c.phone === phone && c.instance_name === instanceName)
     if (existing) { handleSelectContact(existing); return }
-    // Se não encontrado, busca no banco
-    const sb = createBrowserClient()
-    const { data } = await sb
-      .from('whatsapp_contacts')
-      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url')
-      .eq('instance_name', instanceName)
-      .eq('phone', phone)
-      .maybeSingle()
-    if (data) handleSelectContact(data as Contact)
+    // Se não encontrado, busca via API (respeita filtro de instância do usuário)
+    const res = await fetch('/api/whatsapp/contacts')
+    if (!res.ok) return
+    const d = await res.json()
+    const found = (d.contacts ?? []).find((c: Contact) => c.phone === phone && c.instance_name === instanceName)
+    if (found) handleSelectContact(found)
   }
 
   return (
