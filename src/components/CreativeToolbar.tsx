@@ -14,7 +14,7 @@ export function CreativeToolbar({ from, to, activeFilter, accountId }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [syncing, setSyncing] = useState(false)
-  const [done, setDone] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
   function setFilter(f: 'all' | 'active') {
     const params = new URLSearchParams(searchParams.toString())
@@ -24,32 +24,47 @@ export function CreativeToolbar({ from, to, activeFilter, accountId }: Props) {
 
   async function handleSync() {
     setSyncing(true)
+    setMsg(null)
     try {
-      await fetch('/api/sync-ads', {
+      const res = await fetch('/api/sync-ads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from, to, accountId }),
       })
-      setDone(true)
-      setTimeout(() => router.refresh(), 1000)
-    } catch {
-      // silent
+      const data = await res.json()
+      const total = (data.campaignsSynced || 0) + (data.adsSynced || 0)
+      if (data.errors?.length > 0 && total === 0) {
+        setMsg({ text: `Erro: ${data.errors[0]}`, ok: false })
+      } else if (total === 0) {
+        setMsg({ text: 'Nenhum dado encontrado na Meta API para este período.', ok: false })
+      } else {
+        setMsg({ text: `${total} registros sincronizados!`, ok: true })
+        setTimeout(() => router.refresh(), 800)
+      }
+    } catch (e: any) {
+      setMsg({ text: 'Erro ao conectar.', ok: false })
     } finally {
       setSyncing(false)
     }
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-col items-end gap-1">
+      {msg && (
+        <p className={`text-xs px-2 py-1 rounded ${msg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+          {msg.text}
+        </p>
+      )}
+      <div className="flex items-center gap-2">
       <button
         onClick={handleSync}
-        disabled={syncing || done}
+        disabled={syncing}
         className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition disabled:opacity-50"
       >
         <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
         </svg>
-        {done ? 'Concluído!' : syncing ? 'Atualizando...' : 'Atualizar'}
+        {syncing ? 'Atualizando...' : 'Atualizar'}
       </button>
 
       <div className="flex rounded-lg overflow-hidden border border-slate-700 text-sm">
@@ -65,6 +80,7 @@ export function CreativeToolbar({ from, to, activeFilter, accountId }: Props) {
         >
           Ativos
         </button>
+      </div>
       </div>
     </div>
   )
