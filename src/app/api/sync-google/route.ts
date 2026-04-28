@@ -1,41 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { syncGoogleAccount, daysAgo, today } from '@/lib/google-sync'
+import { getSession } from '@/lib/session'
+import { syncGoogleAccount, syncGoogleKeywords, syncGoogleSearchTerms, daysAgo, today } from '@/lib/google-sync'
 
-export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-sync-secret')
-  if (secret !== process.env.SYNC_SECRET) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  }
+export const dynamic = 'force-dynamic'
 
-  const supabase = createClient(
+function supabase() {
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
+}
 
+export async function POST(req: NextRequest) {
+  const secret = req.headers.get('x-sync-secret')
+  const session = await getSession()
+  if (secret !== process.env.SYNC_SECRET && !session) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  }
+
+  const db = supabase()
   const customerId = process.env.GOOGLE_ADS_CUSTOMER_ID!
-  const from = daysAgo(30)
-  const to = today()
+  const body = await req.json().catch(() => ({}))
+  const from = body.from || daysAgo(30)
+  const to = body.to || today()
 
-  const { rows, error } = await syncGoogleAccount(customerId, from, to)
+  const errors: string[] = []
+  let synced = 0
 
-  if (error) {
-    return NextResponse.json({ error }, { status: 500 })
+  // Campaigns
+  const { rows: campRows, error: campErr } = await syncGoogleAccount(customerId, from, to)
+  if (campErr) { errors.push(`campaigns: ${campErr}`) }
+  else if (campRows.length > 0) {
+    const { error: e } = await db.from('google_campaign_metrics').upsert(campRows, { onConflict: 'campaign_id,metric_date' })
+    if (e) errors.push(`campaigns: ${e.message}`)
+    else synced += campRows.length
   }
 
-  if (rows.length > 0) {
-    const { error: upsertError } = await supabase
-      .from('google_campaign_metrics')
-      .upsert(rows, { onConflict: 'campaign_id,metric_date' })
-
-    if (upsertError) {
-      return NextResponse.json({ error: upsertError.message }, { status: 500 })
-    }
+  // Keywords
+  const { rows: kwRows, error: kwErr } = await syncGoogleKeywords(customerId, from, to)
+  if (kwErr) { errors.push(`keywords: ${kwErr}`) }
+  else if (kwRows.length > 0) {
+    const { error: e } = await db.from('google_keyword_metrics').upsert(kwRows, { onConflict: 'customer_id,keyword,match_type,campaign_name,metric_date' })
+    if (e) errors.push(`keywords: ${e.message}`)
+    else synced += kwRows.length
   }
 
-  return NextResponse.json({
-    message: `Google Ads sync concluído: ${rows.length} registros.`,
-    synced: rows.length,
-  })
+  // Search terms
+  const { rows: stRows, error: stErr } = await syncGoogleSearchTerms(customerId, from, to)
+  if (stErr) { errors.push(`search_terms: ${stErr}`) }
+  else if (stRows.length > 0) {
+    const { error: e } = await db.from('google_search_term_metrics').upsert(stRows, { onConflict: 'customer_id,search_term,campaign_name,metric_date' })
+    if (e) errors.push(`search_terms: ${e.message}`)
+    else synced += stRows.length
+  }
+
+  return NextResponse.json({ message: `Google Ads sync: ${synced} registros.`, synced, errors })
 }

@@ -9,6 +9,7 @@ import { CampaignTable } from '@/components/CampaignTable'
 import { CreativeGrid } from '@/components/CreativeGrid'
 import { CreativeToolbar } from '@/components/CreativeToolbar'
 import { GoogleCampaignTable } from '@/components/GoogleCampaignTable'
+import { GoogleKeywordTable } from '@/components/GoogleKeywordTable'
 import { DateRangePicker } from '@/components/DateRangePicker'
 import { DashboardTabs } from '@/components/DashboardTabs'
 
@@ -48,12 +49,24 @@ export default async function DashboardPage({
 
   // ── GOOGLE ADS ──────────────────────────────────────────────────
   if (tab === 'google') {
-    const { data: gMetrics } = await supabase
-      .from('google_campaign_metrics')
-      .select('*')
-      .gte('metric_date', from)
-      .lte('metric_date', to)
-      .order('metric_date', { ascending: true })
+    const [{ data: gMetrics }, { data: kwMetrics }, { data: stMetrics }] = await Promise.all([
+      supabase
+        .from('google_campaign_metrics')
+        .select('*')
+        .gte('metric_date', from)
+        .lte('metric_date', to)
+        .order('metric_date', { ascending: true }),
+      supabase
+        .from('google_keyword_metrics')
+        .select('keyword, match_type, campaign_name, ad_group_name, impressions, clicks, spend, conversions, ctr')
+        .gte('metric_date', from)
+        .lte('metric_date', to),
+      supabase
+        .from('google_search_term_metrics')
+        .select('search_term, campaign_name, ad_group_name, impressions, clicks, spend, conversions, ctr')
+        .gte('metric_date', from)
+        .lte('metric_date', to),
+    ])
 
     const gRows = gMetrics || []
 
@@ -63,21 +76,12 @@ export default async function DashboardPage({
         impressions: acc.impressions + Number(m.impressions),
         clicks: acc.clicks + Number(m.clicks),
         conversions: acc.conversions + Number(m.conversions),
-        conversion_value: acc.conversion_value + Number(m.conversion_value),
       }),
-      { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversion_value: 0 }
+      { spend: 0, impressions: 0, clicks: 0, conversions: 0 }
     )
 
-    const gCtr = gTotals.impressions > 0 ? (gTotals.clicks / gTotals.impressions) : 0
-    const gCpc = gTotals.clicks > 0 ? gTotals.spend / gTotals.clicks : 0
-    const gRoas = gTotals.spend > 0 ? gTotals.conversion_value / gTotals.spend : 0
-
-    const gSpendByDay: Record<string, number> = {}
-    for (const m of gRows) {
-      gSpendByDay[m.metric_date] = (gSpendByDay[m.metric_date] || 0) + Number(m.spend)
-    }
-    const gChartData = Object.entries(gSpendByDay)
-      .map(([date, spend]) => ({ date: date.substring(5), spend: Number(spend.toFixed(2)) }))
+    const gCtr = gTotals.impressions > 0 ? (gTotals.clicks / gTotals.impressions) * 100 : 0
+    const gCustoResultado = gTotals.conversions > 0 ? gTotals.spend / gTotals.conversions : null
 
     const gCampaignMap: Record<string, any> = {}
     for (const m of gRows) {
@@ -102,6 +106,49 @@ export default async function DashboardPage({
       roas: c.spend > 0 ? c.conversion_value / c.spend : 0,
     })).sort((a, b) => b.spend - a.spend)
 
+    // Aggregate keywords
+    const kwMap: Record<string, any> = {}
+    for (const m of kwMetrics || []) {
+      const k = `${m.keyword}__${m.match_type}__${m.campaign_name}`
+      if (!kwMap[k]) {
+        kwMap[k] = {
+          term: m.keyword, type: 'keyword' as const,
+          match_type: m.match_type, campaign_name: m.campaign_name,
+          ad_group_name: m.ad_group_name,
+          spend: 0, impressions: 0, clicks: 0, conversions: 0,
+        }
+      }
+      kwMap[k].spend += Number(m.spend)
+      kwMap[k].impressions += Number(m.impressions)
+      kwMap[k].clicks += Number(m.clicks)
+      kwMap[k].conversions += Number(m.conversions)
+    }
+    const kwRows = Object.values(kwMap).map(r => ({
+      ...r,
+      ctr: r.impressions > 0 ? r.clicks / r.impressions : 0,
+    })).sort((a, b) => b.spend - a.spend)
+
+    // Aggregate search terms
+    const stMap: Record<string, any> = {}
+    for (const m of stMetrics || []) {
+      const k = `${m.search_term}__${m.campaign_name}`
+      if (!stMap[k]) {
+        stMap[k] = {
+          term: m.search_term, type: 'search_term' as const,
+          campaign_name: m.campaign_name, ad_group_name: m.ad_group_name,
+          spend: 0, impressions: 0, clicks: 0, conversions: 0,
+        }
+      }
+      stMap[k].spend += Number(m.spend)
+      stMap[k].impressions += Number(m.impressions)
+      stMap[k].clicks += Number(m.clicks)
+      stMap[k].conversions += Number(m.conversions)
+    }
+    const stRows = Object.values(stMap).map(r => ({
+      ...r,
+      ctr: r.impressions > 0 ? r.clicks / r.impressions : 0,
+    })).sort((a, b) => b.spend - a.spend)
+
     return (
       <div className="flex-1">
         <main className="px-6 py-8 space-y-8">
@@ -119,26 +166,22 @@ export default async function DashboardPage({
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <MetricCard label="Gasto Total" value={`R$ ${fmt(gTotals.spend)}`} icon="💰" color="indigo" />
-                <MetricCard label="ROAS" value={gRoas > 0 ? `${gRoas.toFixed(2)}x` : '—'} icon="📈" color={gRoas >= 3 ? 'green' : gRoas > 0 ? 'yellow' : 'slate'} />
-                <MetricCard label="CTR" value={`${(gCtr * 100).toFixed(2)}%`} icon="🖱️" color={gCtr >= 0.05 ? 'green' : gCtr >= 0.02 ? 'yellow' : 'red'} />
-                <MetricCard label="CPC Médio" value={gCpc > 0 ? `R$ ${fmt(gCpc)}` : '—'} icon="🎯" color="slate" />
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <MetricCard label="Valor Usado" value={`R$ ${fmt(gTotals.spend)}`} icon="💰" color="indigo" />
                 <MetricCard label="Impressões" value={fmtInt(gTotals.impressions)} icon="👁️" color="slate" />
+                <MetricCard label="Resultado" value={fmt(gTotals.conversions)} icon="✅" color={gTotals.conversions > 0 ? 'green' : 'slate'} />
+                <MetricCard label="Custo/Resultado" value={gCustoResultado ? `R$ ${fmt(gCustoResultado)}` : '—'} icon="🎯" color="slate" />
                 <MetricCard label="Cliques" value={fmtInt(gTotals.clicks)} icon="👆" color="slate" />
-                <MetricCard label="Conversões" value={fmt(gTotals.conversions)} icon="✅" color={gTotals.conversions > 0 ? 'green' : 'slate'} />
-                <MetricCard label="Valor Conv." value={`R$ ${fmt(gTotals.conversion_value)}`} icon="💵" color={gTotals.conversion_value > 0 ? 'green' : 'slate'} />
-              </div>
-
-              <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
-                <h3 className="text-white font-semibold mb-1">Gasto diário</h3>
-                <p className="text-slate-400 text-sm mb-6">{from} → {to}</p>
-                <SpendChart data={gChartData} />
               </div>
 
               <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
                 <h3 className="text-white font-semibold mb-6">Campanhas ({gCampaignRows.length})</h3>
                 <GoogleCampaignTable rows={gCampaignRows} />
+              </div>
+
+              <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
+                <h3 className="text-white font-semibold mb-6">Palavras-chave e Termos de Pesquisa</h3>
+                <GoogleKeywordTable keywords={kwRows} searchTerms={stRows} />
               </div>
             </>
           )}
