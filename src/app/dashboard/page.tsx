@@ -7,6 +7,7 @@ import { MetricCard } from '@/components/MetricCard'
 import { SpendChart } from '@/components/SpendChart'
 import { CampaignTable } from '@/components/CampaignTable'
 import { CreativeGrid } from '@/components/CreativeGrid'
+import { CreativeToolbar } from '@/components/CreativeToolbar'
 import { GoogleCampaignTable } from '@/components/GoogleCampaignTable'
 import { DateRangePicker } from '@/components/DateRangePicker'
 import { DashboardTabs } from '@/components/DashboardTabs'
@@ -21,13 +22,14 @@ function daysAgo(n: number) {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; account?: string; tab?: string }>
+  searchParams: Promise<{ from?: string; to?: string; account?: string; tab?: string; creative_filter?: string }>
 }) {
   const params = await searchParams
   const session = await getSession()
   if (!session) redirect('/login')
 
   const tab = params.tab === 'google' ? 'google' : 'meta'
+  const creativeFilter = params.creative_filter === 'all' ? 'all' : 'active'
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -308,12 +310,15 @@ export default async function DashboardPage({
               )}
             </div>
           </div>
-          <DateRangePicker
-            defaultFrom={from}
-            defaultTo={to}
-            accounts={allAccounts}
-            selectedAccount={selectedAccountId}
-          />
+          <div className="flex flex-col items-end gap-2">
+            <DateRangePicker
+              defaultFrom={from}
+              defaultTo={to}
+              accounts={allAccounts}
+              selectedAccount={selectedAccountId}
+            />
+            <CreativeToolbar from={from} to={to} activeFilter={creativeFilter} />
+          </div>
         </div>
 
         {rows.length === 0 ? (
@@ -340,7 +345,7 @@ export default async function DashboardPage({
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
               <h3 className="text-white font-semibold mb-1">Criativos</h3>
               <p className="text-slate-400 text-sm mb-6">{from} → {to}</p>
-              <CreativeGrid creatives={creativeRows} from={from} to={to} />
+              <CreativeGrid creatives={creativeFilter === 'active' ? creativeRows.filter(c => c.effective_status === 'ACTIVE') : creativeRows} />
             </div>
           </>
         )}
