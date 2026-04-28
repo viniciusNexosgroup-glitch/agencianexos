@@ -171,18 +171,19 @@ export default async function DashboardPage({
     (acc, m) => ({
       spend: acc.spend + Number(m.spend),
       impressions: acc.impressions + Number(m.impressions),
+      reach: acc.reach + Number(m.reach),
       clicks: acc.clicks + Number(m.clicks),
       purchases: acc.purchases + Number(m.purchases),
       purchase_value: acc.purchase_value + Number(m.purchase_value),
       leads: acc.leads + Number(m.leads),
       checkouts: acc.checkouts + Number(m.checkouts),
     }),
-    { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0, checkouts: 0 }
+    { spend: 0, impressions: 0, reach: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0, checkouts: 0 }
   )
 
   const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
-  const cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
-  const roas = totals.spend > 0 ? totals.purchase_value / totals.spend : 0
+  const resultado = totals.leads > 0 ? totals.leads : totals.purchases
+  const custoResultado = resultado > 0 ? totals.spend / resultado : null
 
   const spendByDay: Record<string, number> = {}
   for (const m of rows) {
@@ -237,15 +238,19 @@ export default async function DashboardPage({
         ad_id: k, ad_name: m.ad_name, campaign_name: m.campaign_name,
         adset_name: m.adset_name, thumbnail_url: m.thumbnail_url,
         effective_status: m.effective_status, last_date: m.metric_date,
-        spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0,
+        spend: 0, impressions: 0, reach: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0,
+        frequency_sum: 0, days: 0,
       }
     }
     adMap[k].spend += Number(m.spend)
     adMap[k].impressions += Number(m.impressions)
+    adMap[k].reach += Number(m.reach)
     adMap[k].clicks += Number(m.clicks)
     adMap[k].purchases += Number(m.purchases)
     adMap[k].purchase_value += Number(m.purchase_value)
     adMap[k].leads += Number(m.leads)
+    adMap[k].frequency_sum += Number(m.frequency)
+    adMap[k].days += 1
     if (m.metric_date >= adMap[k].last_date) {
       adMap[k].last_date = m.metric_date
       if (m.thumbnail_url) adMap[k].thumbnail_url = m.thumbnail_url
@@ -257,9 +262,7 @@ export default async function DashboardPage({
     .map(a => ({
       ...a,
       ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : 0,
-      cpc: a.clicks > 0 ? a.spend / a.clicks : null,
-      cpm: a.impressions > 0 ? (a.spend / a.impressions) * 1000 : null,
-      roas: a.spend > 0 ? a.purchase_value / a.spend : 0,
+      frequency: a.days > 0 ? a.frequency_sum / a.days : 0,
     }))
     .sort((a, b) => b.spend - a.spend)
 
@@ -303,15 +306,13 @@ export default async function DashboardPage({
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <MetricCard label="Gasto Total" value={`R$ ${fmt(totals.spend)}`} icon="💰" color="indigo" />
-              <MetricCard label="ROAS" value={roas > 0 ? `${roas.toFixed(2)}x` : '—'} icon="📈" color={roas >= 3 ? 'green' : roas > 0 ? 'yellow' : 'slate'} />
-              <MetricCard label="CTR" value={`${ctr.toFixed(2)}%`} icon="🖱️" color={ctr >= 2 ? 'green' : ctr >= 1 ? 'yellow' : 'red'} />
-              <MetricCard label="CPC Médio" value={cpc > 0 ? `R$ ${fmt(cpc)}` : '—'} icon="🎯" color="slate" />
-              <MetricCard label="Impressões" value={fmtInt(totals.impressions)} icon="👁️" color="slate" />
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              <MetricCard label="Valor Usado" value={`R$ ${fmt(totals.spend)}`} icon="💰" color="indigo" />
+              <MetricCard label="Alcance" value={fmtInt(totals.reach)} icon="👥" color="slate" />
+              <MetricCard label="Resultado" value={fmtInt(resultado)} icon="✅" color={resultado > 0 ? 'green' : 'slate'} />
+              <MetricCard label="Custo por Result." value={custoResultado ? `R$ ${fmt(custoResultado)}` : '—'} icon="🎯" color="slate" />
               <MetricCard label="Cliques" value={fmtInt(totals.clicks)} icon="👆" color="slate" />
-              <MetricCard label="Vendas" value={fmtInt(totals.purchases)} icon="🛒" color={totals.purchases > 0 ? 'green' : 'slate'} />
-              <MetricCard label="Leads" value={fmtInt(totals.leads)} icon="📋" color={totals.leads > 0 ? 'green' : 'slate'} />
+              <MetricCard label="CTR" value={`${ctr.toFixed(2)}%`} icon="🖱️" color={ctr >= 2 ? 'green' : ctr >= 1 ? 'yellow' : 'red'} />
             </div>
 
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6">
