@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
-import { syncAccountAds, daysAgo, today } from '@/lib/meta-sync'
+import { syncAccount, syncAccountAds, daysAgo, today } from '@/lib/meta-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,24 +33,40 @@ export async function POST(req: NextRequest) {
   }
 
   const uniqueIds = [...new Set(accounts.map((a: { ad_account_id: string }) => a.ad_account_id))]
-  let totalSynced = 0
+  let campaignsSynced = 0
+  let adsSynced = 0
   const errors: string[] = []
 
   for (const adAccountId of uniqueIds) {
-    const { rows, error } = await syncAccountAds(adAccountId, from, to)
-    if (error) { errors.push(`${adAccountId}: ${error}`); continue }
-    if (rows.length > 0) {
+    // Sync campaign-level metrics
+    const { rows: campaignRows, error: campaignError } = await syncAccount(adAccountId, from, to)
+    if (campaignError) {
+      errors.push(`campaigns/${adAccountId}: ${campaignError}`)
+    } else if (campaignRows.length > 0) {
+      const { error: upsertErr } = await db
+        .from('campaign_metrics')
+        .upsert(campaignRows, { onConflict: 'campaign_id,metric_date' })
+      if (upsertErr) errors.push(`campaigns/${adAccountId}: ${upsertErr.message}`)
+      else campaignsSynced += campaignRows.length
+    }
+
+    // Sync ad-level metrics (creatives)
+    const { rows: adRows, error: adError } = await syncAccountAds(adAccountId, from, to)
+    if (adError) {
+      errors.push(`ads/${adAccountId}: ${adError}`)
+    } else if (adRows.length > 0) {
       const { error: upsertErr } = await db
         .from('ad_metrics')
-        .upsert(rows, { onConflict: 'ad_id,metric_date' })
-      if (upsertErr) { errors.push(`${adAccountId}: ${upsertErr.message}`); continue }
-      totalSynced += rows.length
+        .upsert(adRows, { onConflict: 'ad_id,metric_date' })
+      if (upsertErr) errors.push(`ads/${adAccountId}: ${upsertErr.message}`)
+      else adsSynced += adRows.length
     }
   }
 
   return NextResponse.json({
-    message: `${totalSynced} registros de anúncios sincronizados.`,
-    synced: totalSynced,
+    message: `${campaignsSynced} registros de campanhas e ${adsSynced} de anúncios sincronizados.`,
+    campaignsSynced,
+    adsSynced,
     errors,
   })
 }
