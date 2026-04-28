@@ -2602,12 +2602,19 @@ export function ChatPanel({
                     {/* Vídeo */}
                     {msg.message_type === 'videoMessage' && (
                       msg.media_url?.startsWith('data:video/') ? (
+                        // Base64 do vídeo completo
                         <video controls className="rounded-lg max-w-[260px] max-h-[220px] mb-1" style={{ background: '#000' }}>
                           <source src={msg.media_url} />
                         </video>
-                      ) : msg.media_url?.startsWith('data:image/') && msg.message_id ? (
+                      ) : msg.media_url?.startsWith('http') ? (
+                        // URL direta (enviado via biblioteca ou link externo)
+                        <video controls className="rounded-lg max-w-[260px] max-h-[220px] mb-1" style={{ background: '#000' }}>
+                          <source src={msg.media_url} />
+                        </video>
+                      ) : msg.message_id ? (
+                        // Recebido: VideoPlayer com thumbnail (se disponível) + download sob demanda
                         <VideoPlayer
-                          thumbnail={msg.media_url}
+                          thumbnail={msg.media_url?.startsWith('data:image/') ? msg.media_url : ''}
                           messageId={msg.message_id}
                           instance={contact.instance_name}
                         />
