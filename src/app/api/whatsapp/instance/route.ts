@@ -16,8 +16,9 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
+  const names = await getUserInstanceNames(session)
   let q = supabase().from('whatsapp_instances').select('*').order('created_at', { ascending: false })
-  if (!session.is_admin) q = q.eq('created_by', session.email)
+  if (names !== null) q = q.eq('created_by', session.email)
   const { data } = await q
   return NextResponse.json({ instances: data ?? [] })
 }

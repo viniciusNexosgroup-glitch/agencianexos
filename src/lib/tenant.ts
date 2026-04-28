@@ -7,6 +7,9 @@
  *
  * Admins (is_admin = true) veem TUDO sem filtro.
  * Usuários comuns veem apenas dados das suas próprias instâncias.
+ *
+ * IMPORTANTE: is_admin é sempre verificado diretamente no banco (não no JWT)
+ * para garantir isolamento correto mesmo que o JWT esteja desatualizado.
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -21,13 +24,22 @@ function db() {
   )
 }
 
+async function isAdmin(session: SessionUser): Promise<boolean> {
+  const { data } = await db()
+    .from('clients')
+    .select('is_admin')
+    .eq('id', session.sub)
+    .single()
+  return !!data?.is_admin
+}
+
 /**
  * Retorna os instance_names que pertencem ao usuário logado.
  * - Admin → null (sem filtro; o chamador deve retornar todos os dados)
  * - Usuário com 0 instâncias → [] (sem acesso a nada)
  */
 export async function getUserInstanceNames(session: SessionUser): Promise<string[] | null> {
-  if (session.is_admin) return null
+  if (await isAdmin(session)) return null
   const { data } = await db()
     .from('whatsapp_instances')
     .select('instance_name')
@@ -40,7 +52,7 @@ export async function getUserInstanceNames(session: SessionUser): Promise<string
  * Admin → sempre true.
  */
 export async function canAccessInstance(instanceName: string, session: SessionUser): Promise<boolean> {
-  if (session.is_admin) return true
+  if (await isAdmin(session)) return true
   const { data } = await db()
     .from('whatsapp_instances')
     .select('instance_name')
@@ -55,7 +67,7 @@ export async function canAccessInstance(instanceName: string, session: SessionUs
  * Admin → sempre true.
  */
 export async function canAccessContact(contactId: string, session: SessionUser): Promise<boolean> {
-  if (session.is_admin) return true
+  if (await isAdmin(session)) return true
   const names = await getUserInstanceNames(session)
   if (!names || names.length === 0) return false
   const { data } = await db()
