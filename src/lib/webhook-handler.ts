@@ -339,6 +339,23 @@ export async function processWebhookEvent(body: any) {
         }
       }
 
+      // Documento: salva metadados (nome, tipo, tamanho) + dados para download sob demanda
+      if (!error && msgType === 'documentMessage') {
+        const docMsg = innerMsg.documentMessage
+        if (docMsg) {
+          const { jpegThumbnail: _t, ...docData } = docMsg as Record<string, unknown>
+          await db.from('whatsapp_messages').update({
+            media_data: {
+              fileName: (docMsg as Record<string, unknown>).title || (docMsg as Record<string, unknown>).fileName || 'documento',
+              mimetype: (docMsg as Record<string, unknown>).mimetype || 'application/octet-stream',
+              fileLength: (docMsg as Record<string, unknown>).fileLength ? Number((docMsg as Record<string, unknown>).fileLength) : null,
+              key: { remoteJid, fromMe, id: msg.key.id, participant: msg.key.participant || null },
+              message: { documentMessage: docData },
+            },
+          }).eq('message_id', msg.key.id)
+        }
+      }
+
       // Enquete: salva nome e opções em media_data para renderização no CRM
       if (!error && msgType === 'pollCreationMessage') {
         const poll = innerMsg.pollCreationMessage

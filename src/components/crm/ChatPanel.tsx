@@ -267,6 +267,99 @@ function renderMessageText(text: string, query: string) {
   )
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function DocumentCard({
+  fileName,
+  mimetype,
+  fileLength,
+  messageId,
+  instance,
+  fromMe,
+}: {
+  fileName: string
+  mimetype: string
+  fileLength?: number | null
+  messageId?: string | null
+  instance: string
+  fromMe: boolean
+}) {
+  const [loading, setLoading] = useState(false)
+
+  const ext = (() => {
+    const fromName = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() : null
+    const fromMime = mimetype.includes('/') ? mimetype.split('/')[1]?.split(';')[0].toUpperCase() : null
+    return (fromName || fromMime || 'DOC').slice(0, 5)
+  })()
+
+  async function download(open: boolean) {
+    if (!messageId) return
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ instance, message_id: messageId })
+      const res = await fetch(`/api/whatsapp/media-document?${params}`)
+      if (!res.ok) { alert('Não foi possível baixar o arquivo'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      if (open) {
+        window.open(url, '_blank')
+      } else {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        a.click()
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    } catch {
+      alert('Erro ao baixar o arquivo')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const borderColor = fromMe ? 'border-[#0a7060]' : 'border-[#2a3942]'
+  const headerBg    = fromMe ? 'bg-[#024737]'    : 'bg-[#182229]'
+
+  return (
+    <div className={`rounded-xl overflow-hidden border ${borderColor} mb-1`} style={{ minWidth: 230, maxWidth: 280 }}>
+      <div className={`flex items-center gap-3 p-3 ${headerBg}`}>
+        <div className="w-11 h-11 rounded-lg bg-[#00a884] flex items-center justify-center flex-shrink-0">
+          <span className="text-white text-[9px] font-bold leading-none text-center px-1">{ext}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-medium leading-tight" style={{ wordBreak: 'break-word' }}>{fileName}</p>
+          <p className="text-[#8696a0] text-xs mt-0.5">
+            {ext}{fileLength ? ` • ${formatFileSize(fileLength)}` : ''}
+          </p>
+        </div>
+      </div>
+      {messageId && (
+        <div className={`flex border-t ${borderColor}`}>
+          <button
+            onClick={() => download(true)}
+            disabled={loading}
+            className="flex-1 py-2.5 text-sm text-[#00a884] hover:bg-white/5 transition font-medium disabled:opacity-50"
+          >
+            {loading ? '...' : 'Abrir'}
+          </button>
+          <div className={`w-px ${borderColor.replace('border-', 'bg-')}`} />
+          <button
+            onClick={() => download(false)}
+            disabled={loading}
+            className="flex-1 py-2.5 text-sm text-[#00a884] hover:bg-white/5 transition font-medium disabled:opacity-50"
+          >
+            Salvar como...
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function VideoPlayer({
   thumbnail,
   messageId,
@@ -2624,9 +2717,20 @@ export function ChatPanel({
                     )}
 
                     {/* Documento */}
-                    {msg.message_type === 'documentMessage' && (
-                      <span className="italic text-[#8696a0] text-xs">📄 Documento</span>
-                    )}
+                    {msg.message_type === 'documentMessage' && (() => {
+                      const d = msg.media_data as { fileName?: string; mimetype?: string; fileLength?: number } | null
+                      if (!d?.fileName) return <span className="italic text-[#8696a0] text-xs">📄 Documento</span>
+                      return (
+                        <DocumentCard
+                          fileName={d.fileName}
+                          mimetype={d.mimetype || 'application/octet-stream'}
+                          fileLength={d.fileLength}
+                          messageId={msg.message_id}
+                          instance={contact.instance_name}
+                          fromMe={msg.from_me}
+                        />
+                      )
+                    })()}
 
                     {/* Contato compartilhado */}
                     {(msg.message_type === 'contactMessage' || msg.message_type === 'contactsArrayMessage') && (() => {
