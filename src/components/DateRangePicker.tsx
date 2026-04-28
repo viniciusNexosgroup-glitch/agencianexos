@@ -25,6 +25,16 @@ function daysAgo(n: number) {
   return d.toISOString().split('T')[0]
 }
 
+function prevMonthRange(): { from: string; to: string } {
+  const now = new Date()
+  const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const last  = new Date(now.getFullYear(), now.getMonth(), 0)
+  return {
+    from: first.toISOString().split('T')[0],
+    to:   last.toISOString().split('T')[0],
+  }
+}
+
 export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAccount }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -76,6 +86,16 @@ export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAcco
             {p.label}
           </button>
         ))}
+        <button
+          onClick={() => {
+            const r = prevMonthRange()
+            setFrom(r.from); setTo(r.to)
+            apply(r.from, r.to)
+          }}
+          className="px-2.5 py-1.5 text-xs bg-indigo-900/60 hover:bg-indigo-800/60 text-indigo-300 rounded-lg transition whitespace-nowrap"
+        >
+          Mês ant.
+        </button>
       </div>
 
       {/* Datas customizadas */}
