@@ -204,7 +204,9 @@ export default async function DashboardPage({
     .select('ad_account_id, account_name, bm_name, report_group_jid')
     .eq('is_active', true)
 
-  const allAccounts = accounts || []
+  const allAccounts = (accounts || []).sort((a, b) =>
+    (a.account_name || '').localeCompare(b.account_name || '', 'pt-BR', { numeric: true, sensitivity: 'base' })
+  )
   const selectedAccountId = params.account || allAccounts[0]?.ad_account_id || ''
   const accountIds = [selectedAccountId].filter(Boolean)
 
