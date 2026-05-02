@@ -15,20 +15,26 @@ export async function GET() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Busca a instância conectada do usuário
+  // Busca qualquer instância do usuário (conectada ou não — Evolution retorna vazio se offline)
   const { data: instances } = await supabase
     .from('whatsapp_instances')
-    .select('instance_name')
+    .select('instance_name, status')
     .eq('created_by', session.email)
-    .eq('status', 'connected')
-    .limit(1)
+    .limit(5)
 
   if (!instances || instances.length === 0) {
-    return NextResponse.json({ error: 'Nenhuma instância conectada', groups: [] })
+    return NextResponse.json({ error: 'Nenhuma instância encontrada', groups: [] })
   }
 
-  const instanceName = instances[0].instance_name
-  const groups = await fetchAllGroups(instanceName)
+  // Tenta cada instância até encontrar uma com grupos
+  for (const inst of instances) {
+    const groups = await fetchAllGroups(inst.instance_name)
+    if (groups.length > 0) {
+      return NextResponse.json({ groups, instanceName: inst.instance_name })
+    }
+  }
 
-  return NextResponse.json({ groups, instanceName })
+  // Nenhuma instância retornou grupos — retorna vazio com a primeira
+  const instanceName = instances[0].instance_name
+  return NextResponse.json({ groups: [], instanceName })
 }
