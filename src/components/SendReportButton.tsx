@@ -79,7 +79,7 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
     setMsg(null)
     try {
       const jsPDF = (await import('jspdf')).default
-      await import('jspdf-autotable')
+      const autoTable = (await import('jspdf-autotable')).default
 
       const res = await fetch(`/api/report-data?from=${from}&to=${to}&account=${adAccountId}`)
       const data = await res.json()
@@ -105,17 +105,16 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
         doc.setFontSize(11); doc.setTextColor(99, 102, 241)
         doc.text('Meta Ads', 14, y); y += 6
 
-        ;(doc as any).autoTable({
+        autoTable(doc, {
           startY: y,
-          head: [['Investido', 'Impressões', 'Cliques', 'CTR', 'CPM', 'Conversões', 'Custo/Conv.']],
+          head: [['Investido', 'Impressões', 'Cliques', 'CTR', 'Resultado', 'Custo/Result.']],
           body: [[
             `R$ ${(m.totals?.spend || 0).toFixed(2)}`,
             (m.totals?.impressions || 0).toLocaleString('pt-BR'),
             (m.totals?.clicks || 0).toLocaleString('pt-BR'),
-            `${((m.totals?.ctr || 0) * 100).toFixed(2)}%`,
-            `R$ ${(m.totals?.cpm || 0).toFixed(2)}`,
-            (m.totals?.conversions || 0).toLocaleString('pt-BR'),
-            `R$ ${(m.totals?.costPerConversion || 0).toFixed(2)}`,
+            `${(m.totals?.ctr || 0).toFixed(2)}%`,
+            (m.totals?.resultado || 0).toLocaleString('pt-BR'),
+            m.totals?.custo_resultado != null ? `R$ ${m.totals.custo_resultado.toFixed(2)}` : '—',
           ]],
           styles: { fontSize: 8, cellPadding: 3 },
           headStyles: { fillColor: [99, 102, 241] },
@@ -124,13 +123,16 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
         y = (doc as any).lastAutoTable.finalY + 8
 
         if (m.campaigns?.length > 0) {
-          ;(doc as any).autoTable({
+          autoTable(doc, {
             startY: y,
-            head: [['Campanha', 'Investido', 'Impressões', 'Cliques', 'Conversões']],
+            head: [['Campanha', 'Investido', 'Impressões', 'Cliques', 'Resultado', 'Custo/Result.']],
             body: m.campaigns.map((c: any) => [
-              c.campaign_name, `R$ ${c.spend?.toFixed(2)}`,
-              c.impressions?.toLocaleString('pt-BR'), c.clicks?.toLocaleString('pt-BR'),
-              c.conversions?.toLocaleString('pt-BR'),
+              c.campaign_name,
+              `R$ ${(c.spend || 0).toFixed(2)}`,
+              (c.impressions || 0).toLocaleString('pt-BR'),
+              (c.clicks || 0).toLocaleString('pt-BR'),
+              (c.resultado || 0).toLocaleString('pt-BR'),
+              c.custo_resultado != null ? `R$ ${c.custo_resultado.toFixed(2)}` : '—',
             ]),
             styles: { fontSize: 7 },
             headStyles: { fillColor: [30, 41, 59] },
