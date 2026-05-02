@@ -270,6 +270,22 @@ export async function processWebhookEvent(body: any) {
         source_url: referral?.source_url || null,
       }
 
+      // Monta preview da última mensagem (igual ao WhatsApp)
+      const mediaLabels: Record<string, string> = {
+        imageMessage: '📷 Foto',
+        videoMessage: '🎥 Vídeo',
+        audioMessage: '🎵 Áudio',
+        ptvMessage: '🎥 Vídeo',
+        documentMessage: '📄 Documento',
+        stickerMessage: '🌟 Sticker',
+      }
+      const msgPreview = mediaLabels[msgType] ?? text
+      const lastMessageBody = fromMe
+        ? `Você: ${msgPreview}`
+        : isGroup && participantName
+          ? `${participantName}: ${msgPreview}`
+          : msgPreview
+
       const { error } = await db.rpc('process_whatsapp_message', {
         p_instance_name:    instance,
         p_phone:            phone,
@@ -283,6 +299,13 @@ export async function processWebhookEvent(body: any) {
         p_participant_name: participantName || null,
         p_participant_jid:  participantJid  || null,
       })
+
+      if (!error) {
+        await db.from('whatsapp_contacts')
+          .update({ last_message_body: lastMessageBody })
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+      }
 
       if (error) {
         console.error('Erro ao processar mensagem via RPC:', error.message)

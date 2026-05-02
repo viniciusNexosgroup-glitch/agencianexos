@@ -29,7 +29,7 @@ export async function GET() {
 
   const { data } = await supabase()
     .from('whatsapp_contacts')
-    .select('id, name, phone, instance_name, last_message_at, remote_jid, unread_count, profile_pic_url, follow_up')
+    .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url, follow_up')
     .in('instance_name', instanceNames)
     .not('phone', 'like', '%@lid')
     .not('phone', 'eq', 'status@broadcast')

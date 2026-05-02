@@ -220,7 +220,20 @@ export async function fetchAllGroups(instanceName: string): Promise<{ id: string
     })
     if (!res.ok) return []
     const data = await res.json()
-    return (Array.isArray(data) ? data : []).map((g: any) => ({ id: g.id, subject: g.subject }))
+    // Suporta array direto ou objeto com propriedade groups/data
+    const arr: any[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.groups)
+        ? data.groups
+        : Array.isArray(data?.data)
+          ? data.data
+          : []
+    return arr
+      .map((g: any) => ({
+        id: g.id || g.remoteJid || g.groupJid || '',
+        subject: g.subject || g.name || g.groupName || '',
+      }))
+      .filter(g => g.id && g.subject)
   } catch {
     return []
   }
