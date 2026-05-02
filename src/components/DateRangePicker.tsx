@@ -35,6 +35,15 @@ function prevMonthRange(): { from: string; to: string } {
   }
 }
 
+function currMonthRange(): { from: string; to: string } {
+  const now = new Date()
+  const first = new Date(now.getFullYear(), now.getMonth(), 1)
+  return {
+    from: first.toISOString().split('T')[0],
+    to:   now.toISOString().split('T')[0],
+  }
+}
+
 export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAccount }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -120,11 +129,21 @@ export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAcco
         ))}
         <button
           onClick={() => {
-            const r = prevMonthRange()
+            const r = currMonthRange()
             setFrom(r.from); setTo(r.to)
             apply(r.from, r.to)
           }}
           className="px-2.5 py-1.5 text-xs bg-indigo-900/60 hover:bg-indigo-800/60 text-indigo-300 rounded-lg transition whitespace-nowrap"
+        >
+          Mês atual
+        </button>
+        <button
+          onClick={() => {
+            const r = prevMonthRange()
+            setFrom(r.from); setTo(r.to)
+            apply(r.from, r.to)
+          }}
+          className="px-2.5 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition whitespace-nowrap"
         >
           Mês ant.
         </button>
