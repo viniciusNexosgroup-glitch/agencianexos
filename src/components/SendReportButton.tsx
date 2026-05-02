@@ -46,7 +46,9 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
     if (!res.ok || data.error) {
       setGroupError(data.error || 'Erro ao carregar grupos')
     } else {
-      setGroups(data.groups)
+      setGroups([...(data.groups || [])].sort((a, b) =>
+        a.subject.localeCompare(b.subject, 'pt-BR', { numeric: true, sensitivity: 'base' })
+      ))
     }
     setLoadingGroups(false)
   }
