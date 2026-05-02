@@ -61,17 +61,25 @@ export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAcco
       {accounts.length >= 1 && (
         <div className="flex items-center gap-2">
           <span className="text-slate-500 text-xs whitespace-nowrap">Conta:</span>
-          <select
-            value={account}
-            onChange={e => { setAccount(e.target.value); apply(from, to, e.target.value) }}
-            className="bg-[#1e293b] border border-slate-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[220px] truncate"
-          >
-            {accounts.map(a => (
-              <option key={a.ad_account_id} value={a.ad_account_id}>
-                {a.account_name || a.ad_account_id}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              value={account}
+              disabled={isPending}
+              onChange={e => { setAccount(e.target.value); apply(from, to, e.target.value) }}
+              className={`bg-[#1e293b] border border-slate-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[220px] truncate transition-opacity ${isPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {accounts.map(a => (
+                <option key={a.ad_account_id} value={a.ad_account_id}>
+                  {a.account_name || a.ad_account_id}
+                </option>
+              ))}
+            </select>
+            {isPending && (
+              <div className="absolute inset-y-0 right-2 flex items-center pointer-events-none">
+                <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
