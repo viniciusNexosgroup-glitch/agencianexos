@@ -216,7 +216,7 @@ export async function fetchAllGroups(instanceName: string): Promise<{ id: string
   try {
     const res = await fetch(`${BASE_URL}/group/fetchAllGroups/${instanceName}?getParticipants=false`, {
       headers: headers(),
-      signal: timeout(),
+      signal: timeout(60000),
     })
     if (!res.ok) return []
     const data = await res.json()

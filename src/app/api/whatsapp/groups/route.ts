@@ -4,6 +4,7 @@ import { getSession } from '@/lib/session'
 import { fetchAllGroups } from '@/lib/evolution'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 export async function GET() {
   const session = await getSession()
@@ -15,7 +16,7 @@ export async function GET() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Busca qualquer instância do usuário (conectada ou não — Evolution retorna vazio se offline)
+  // Busca qualquer instância do usuário (sem filtrar status)
   const { data: instances } = await supabase
     .from('whatsapp_instances')
     .select('instance_name, status')
@@ -34,7 +35,6 @@ export async function GET() {
     }
   }
 
-  // Nenhuma instância retornou grupos — retorna vazio com a primeira
-  const instanceName = instances[0].instance_name
-  return NextResponse.json({ groups: [], instanceName })
+  // Nenhuma retornou grupos
+  return NextResponse.json({ groups: [], instanceName: instances[0].instance_name })
 }
