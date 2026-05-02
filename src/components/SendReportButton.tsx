@@ -22,6 +22,10 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
   const [groupError, setGroupError] = useState('')
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null)
   const [linkedJid, setLinkedJid] = useState(linkedGroupJid ?? null)
+
+  useEffect(() => {
+    setLinkedJid(linkedGroupJid ?? null)
+  }, [linkedGroupJid])
   const [sending, setSending] = useState(false)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [search, setSearch] = useState('')
