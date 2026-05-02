@@ -518,6 +518,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
 
   const chatContactRef = useRef<Contact | null>(null)
   const allowedInstancesRef = useRef<Set<string>>(new Set())
+  const instancesLoadedRef = useRef(false)
 
   async function fetchContacts() {
     const res = await fetch('/api/whatsapp/contacts')
@@ -590,6 +591,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
       const list = d.instances ?? d ?? []
       setInstances(list)
       allowedInstancesRef.current = new Set(list.map((i: any) => i.instance_name as string))
+      instancesLoadedRef.current = true
     })
     try {
       const saved = JSON.parse(localStorage.getItem('crm_saved_filters') || '[]')
@@ -606,7 +608,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
           const updated = payload.new as any
           // Ignora contatos de instâncias que não pertencem ao usuário
           const allowed = allowedInstancesRef.current
-          if (allowed.size > 0 && !allowed.has(updated.instance_name)) return
+          if (!instancesLoadedRef.current || !allowed.has(updated.instance_name)) return
           setContacts(prev => {
             const exists = prev.some(c => c.id === updated.id)
             const currentId = chatContactRef.current?.id
@@ -638,6 +640,9 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
         const msg = payload.new as any
         if (!msg?.contact_id) return
 
+        // Ignora mensagens de contatos que não são desta instância do usuário
+        if (!instancesLoadedRef.current) return
+
         const isOpenChat = msg.contact_id === chatContactRef.current?.id
 
         // Move contato para o topo sempre que chegar mensagem nova (qualquer remetente)
@@ -651,9 +656,14 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
           })
         }
 
-        // Incrementa badge apenas para mensagens recebidas (não enviadas por mim)
+        // Incrementa badge apenas para mensagens recebidas de contatos desta instância
         if (!msg.from_me && !isOpenChat) {
-          setUnreadMap(prev => ({ ...prev, [msg.contact_id]: (prev[msg.contact_id] ?? 0) + 1 }))
+          setContacts(prev => {
+            const belongs = prev.some(c => c.id === msg.contact_id)
+            if (!belongs) return prev
+            setUnreadMap(um => ({ ...um, [msg.contact_id]: (um[msg.contact_id] ?? 0) + 1 }))
+            return prev
+          })
         }
       })
       .subscribe()

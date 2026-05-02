@@ -16,10 +16,12 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const names = await getUserInstanceNames(session)
-  let q = supabase().from('whatsapp_instances').select('*').order('created_at', { ascending: false })
-  if (names !== null) q = q.eq('created_by', session.email)
-  const { data } = await q
+  // Sempre filtra pelas instâncias do próprio usuário (admin não vê instâncias de outros)
+  const { data } = await supabase()
+    .from('whatsapp_instances')
+    .select('*')
+    .eq('created_by', session.email)
+    .order('created_at', { ascending: false })
   return NextResponse.json({ instances: data ?? [] })
 }
 

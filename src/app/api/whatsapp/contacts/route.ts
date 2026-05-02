@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
-import { getUserInstanceNames } from '@/lib/tenant'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,22 +16,26 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const names = await getUserInstanceNames(session)
-  if (names !== null && names.length === 0) {
+  // Sempre filtra pelas instâncias do próprio usuário (admin não vê contatos de outros)
+  const { data: instances } = await supabase()
+    .from('whatsapp_instances')
+    .select('instance_name')
+    .eq('created_by', session.email)
+
+  const instanceNames = (instances ?? []).map(i => i.instance_name as string)
+  if (instanceNames.length === 0) {
     return NextResponse.json({ contacts: [] }, { headers: { 'Cache-Control': 'no-store' } })
   }
 
-  let q = supabase()
+  const { data } = await supabase()
     .from('whatsapp_contacts')
     .select('id, name, phone, instance_name, last_message_at, remote_jid, unread_count, profile_pic_url, follow_up')
+    .in('instance_name', instanceNames)
     .not('phone', 'like', '%@lid')
     .not('phone', 'eq', 'status@broadcast')
     .order('last_message_at', { ascending: false })
     .limit(500)
 
-  if (names !== null) q = q.in('instance_name', names)
-
-  const { data } = await q
   return NextResponse.json({ contacts: data ?? [] }, {
     headers: { 'Cache-Control': 'no-store' },
   })
