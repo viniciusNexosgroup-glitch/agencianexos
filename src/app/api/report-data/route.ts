@@ -19,15 +19,24 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const from = searchParams.get('from') || ''
   const to = searchParams.get('to') || ''
+  const account = searchParams.get('account') || ''
 
   const db = supabase()
 
+  let metaQuery = db.from('campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to)
+  let adQuery = db.from('ad_metrics')
+    .select('ad_id,ad_name,campaign_name,impressions,reach,clicks,spend,ctr,purchases,leads,conversations,profile_visits,frequency')
+    .gte('metric_date', from)
+    .lte('metric_date', to)
+
+  if (account) {
+    metaQuery = metaQuery.eq('ad_account_id', account)
+    adQuery = adQuery.eq('ad_account_id', account)
+  }
+
   const [{ data: metaMetrics }, { data: adMetrics }, { data: googleMetrics }, { data: kwMetrics }] = await Promise.all([
-    db.from('campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to),
-    db.from('ad_metrics')
-      .select('ad_id,ad_name,campaign_name,impressions,reach,clicks,spend,ctr,purchases,leads,conversations,profile_visits,frequency')
-      .gte('metric_date', from)
-      .lte('metric_date', to),
+    metaQuery,
+    adQuery,
     db.from('google_campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to),
     db.from('google_keyword_metrics')
       .select('keyword,match_type,campaign_name,impressions,clicks,spend,conversions')
