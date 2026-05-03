@@ -44,7 +44,7 @@ export async function POST() {
   // Upsert all found accounts linked to the current session user
   const rows = accounts.map(a => ({
     client_id: session.sub,
-    ad_account_id: a.id,          // already "act_XXXXXXX"
+    ad_account_id: a.id,
     account_name: a.name,
     bm_id: a.business?.id || null,
     bm_name: a.business?.name || null,
@@ -57,9 +57,28 @@ export async function POST() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // Desativa contas que não estão mais na resposta da Meta
+  const returnedIds = new Set(accounts.map(a => a.id))
+  const { data: existingAccounts } = await db
+    .from('client_accounts')
+    .select('ad_account_id')
+    .eq('client_id', session.sub)
+
+  const toDeactivate = (existingAccounts || [])
+    .map(a => a.ad_account_id as string)
+    .filter(id => !returnedIds.has(id))
+
+  if (toDeactivate.length > 0) {
+    await db
+      .from('client_accounts')
+      .update({ is_active: false })
+      .eq('client_id', session.sub)
+      .in('ad_account_id', toDeactivate)
+  }
+
   return NextResponse.json({
     found: accounts.length,
-    saved: rows.length,
+    deactivated: toDeactivate.length,
     accounts: rows.map(r => ({ id: r.ad_account_id, name: r.account_name, active: r.is_active })),
   })
 }
