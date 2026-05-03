@@ -394,8 +394,9 @@ export default async function DashboardPage({
           </div>
         ) : (
           <>
+            <BalanceCard accountId={selectedAccountId} avgDailySpend={avgDailySpend} />
+
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              <BalanceCard accountId={selectedAccountId} avgDailySpend={avgDailySpend} />
               <MetricCard label="Valor Usado" value={`R$ ${fmt(totals.spend)}`} icon="💰" color="indigo" />
               <MetricCard label="Alcance" value={fmtInt(totals.reach)} icon="👥" color="slate" />
               <MetricCard label="Resultado" value={fmtInt(resultado)} icon="✅" color={resultado > 0 ? 'green' : 'slate'} />

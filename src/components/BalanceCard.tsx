@@ -18,43 +18,37 @@ export function BalanceCard({ accountId, avgDailySpend }: Props) {
       .catch(() => setBalance(null))
   }, [accountId])
 
-  if (balance === undefined) {
-    return (
-      <div className="rounded-xl border border-slate-700 bg-slate-500/10 p-4 animate-pulse">
-        <div className="h-3 w-24 bg-slate-700 rounded mb-3" />
-        <div className="h-7 w-32 bg-slate-700 rounded" />
-      </div>
-    )
-  }
+  if (balance === undefined || balance === null) return null
 
-  if (balance === null) return null
+  const daysLeft = avgDailySpend > 0 ? Math.round(balance / avgDailySpend) : null
+  const isLow = balance < 30
+  const isCritical = balance < 10
 
-  const daysLeft = avgDailySpend > 0 ? Math.floor(balance / avgDailySpend) : null
-  const color = balance < 10 ? 'red' : balance < 30 ? 'yellow' : 'green'
+  const accent = isCritical
+    ? 'border-red-500/40 bg-red-500/5 text-red-400'
+    : isLow
+    ? 'border-amber-500/40 bg-amber-500/5 text-amber-400'
+    : 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400'
 
-  const styles = {
-    red:    'text-red-400 bg-red-500/10 border-red-500/30',
-    yellow: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
-    green:  'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-  }[color]
+  const daysText = daysLeft === null
+    ? null
+    : daysLeft < 1
+    ? 'menos de 1 dia'
+    : `~${daysLeft} dia${daysLeft !== 1 ? 's' : ''}`
 
   return (
-    <div className={`rounded-xl border p-4 ${styles}`}>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-medium uppercase tracking-wide opacity-70">Saldo Meta</span>
-        <span className="text-base">💳</span>
-      </div>
-      <p className="text-2xl font-bold">
-        {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-      </p>
-      {daysLeft !== null && (
-        <p className="text-xs mt-1 opacity-70">
-          ~{daysLeft} dia{daysLeft !== 1 ? 's' : ''} restante{daysLeft !== 1 ? 's' : ''}
-        </p>
+    <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm ${accent}`}>
+      <span className="text-base flex-shrink-0">💳</span>
+      <span className="font-semibold">
+        Saldo Meta: {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+      </span>
+      {daysText && (
+        <>
+          <span className="opacity-30">•</span>
+          <span className="opacity-80">{daysText} restante{daysLeft !== 1 ? 's' : ''}</span>
+        </>
       )}
-      {balance < 30 && (
-        <p className="text-xs mt-1 font-semibold">⚠️ Saldo baixo</p>
-      )}
+      {isLow && <span className="ml-auto font-semibold flex-shrink-0">⚠️ Saldo baixo</span>}
     </div>
   )
 }
