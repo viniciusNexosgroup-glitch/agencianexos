@@ -22,14 +22,24 @@ export async function POST(req: NextRequest) {
 
   const db = supabase()
 
-  // Suporta múltiplos customer IDs separados por vírgula
-  const customerIds = (process.env.GOOGLE_ADS_CUSTOMER_ID || '')
-    .split(',')
-    .map(id => id.trim())
-    .filter(Boolean)
+  // Busca contas do banco (descobertas automaticamente)
+  const { data: googleAccountsRows } = await db
+    .from('google_accounts')
+    .select('customer_id')
+    .eq('is_active', true)
+
+  let customerIds = (googleAccountsRows || []).map((r: any) => r.customer_id as string)
+
+  // Fallback: variável de ambiente (caso o banco ainda esteja vazio)
+  if (customerIds.length === 0) {
+    customerIds = (process.env.GOOGLE_ADS_CUSTOMER_ID || '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean)
+  }
 
   if (customerIds.length === 0) {
-    return NextResponse.json({ error: 'GOOGLE_ADS_CUSTOMER_ID não configurado' }, { status: 400 })
+    return NextResponse.json({ error: 'Nenhuma conta Google Ads configurada. Use o botão "Descobrir contas" na aba Google Ads.' }, { status: 400 })
   }
 
   const body = await req.json().catch(() => ({}))

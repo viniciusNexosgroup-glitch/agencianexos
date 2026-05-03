@@ -17,6 +17,7 @@ import { LinkGoogleButton } from '@/components/LinkGoogleButton'
 import { DiscoverAccountsButton } from '@/components/DiscoverAccountsButton'
 import { DateRangePicker } from '@/components/DateRangePicker'
 import { DashboardTabs } from '@/components/DashboardTabs'
+import { DiscoverGoogleAccountsButton } from '@/components/DiscoverGoogleAccountsButton'
 
 function fmt(n: number) { return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function fmtInt(n: number) { return n.toLocaleString('pt-BR') }
@@ -194,6 +195,7 @@ export default async function DashboardPage({
               </h2>
             </div>
             <div className="flex items-center gap-3">
+              <DiscoverGoogleAccountsButton />
               <ExportPdfButton from={from} to={to} adAccountId={selectedGoogleCustomerId} accountName={selectedGoogleCustomerId ? selectedGoogleCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : undefined} />
               <DateRangePicker defaultFrom={from} defaultTo={to} accounts={googleAccountsList} selectedAccount={selectedGoogleCustomerId} />
             </div>
