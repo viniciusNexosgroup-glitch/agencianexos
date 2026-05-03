@@ -15,11 +15,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const res = await fetch(
-      `https://graph.facebook.com/${version}/${accountId}?fields=balance,currency&access_token=${token}`,
+      `https://graph.facebook.com/${version}/${accountId}?fields=balance,currency,is_prepay_account&access_token=${token}`,
       { signal: AbortSignal.timeout(10000) }
     )
     const data = await res.json()
     if (data.error || data.balance == null) return NextResponse.json({ balance: null })
+    if (!data.is_prepay_account) return NextResponse.json({ balance: null })
     return NextResponse.json({ balance: Number(data.balance) / 100 })
   } catch {
     return NextResponse.json({ balance: null })
