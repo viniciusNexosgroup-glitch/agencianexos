@@ -21,7 +21,17 @@ export async function POST(req: NextRequest) {
   }
 
   const db = supabase()
-  const customerId = process.env.GOOGLE_ADS_CUSTOMER_ID!
+
+  // Suporta múltiplos customer IDs separados por vírgula
+  const customerIds = (process.env.GOOGLE_ADS_CUSTOMER_ID || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(Boolean)
+
+  if (customerIds.length === 0) {
+    return NextResponse.json({ error: 'GOOGLE_ADS_CUSTOMER_ID não configurado' }, { status: 400 })
+  }
+
   const body = await req.json().catch(() => ({}))
   const from = body.from || daysAgo(30)
   const to = body.to || today()
@@ -29,47 +39,54 @@ export async function POST(req: NextRequest) {
   const errors: string[] = []
   let synced = 0
 
-  // Campaigns
-  const { rows: campRows, error: campErr } = await syncGoogleAccount(customerId, from, to)
-  if (campErr) { errors.push(`campaigns: ${campErr}`) }
-  else if (campRows.length > 0) {
-    const { error: e } = await db.from('google_campaign_metrics').upsert(campRows, { onConflict: 'campaign_id,metric_date' })
-    if (e) errors.push(`campaigns: ${e.message}`)
-    else synced += campRows.length
-  }
-
-  // Keywords
-  const { rows: kwRows, error: kwErr } = await syncGoogleKeywords(customerId, from, to)
-  if (kwErr) { errors.push(`keywords: ${kwErr}`) }
-  else if (kwRows.length > 0) {
-    const { error: e } = await db.from('google_keyword_metrics').upsert(kwRows, { onConflict: 'customer_id,keyword,match_type,campaign_name,metric_date' })
-    if (e) errors.push(`keywords: ${e.message}`)
-    else synced += kwRows.length
-  }
-
-  // Search terms — aggregate duplicates (same term in multiple ad groups)
-  const { rows: stRows, error: stErr } = await syncGoogleSearchTerms(customerId, from, to)
-  if (stErr) { errors.push(`search_terms: ${stErr}`) }
-  else if (stRows.length > 0) {
-    const stMap: Record<string, typeof stRows[0]> = {}
-    for (const r of stRows) {
-      const k = `${r.customer_id}__${r.search_term}__${r.campaign_name}__${r.metric_date}`
-      if (!stMap[k]) { stMap[k] = { ...r } }
-      else {
-        stMap[k].impressions += r.impressions
-        stMap[k].clicks += r.clicks
-        stMap[k].spend += r.spend
-        stMap[k].conversions += r.conversions
-      }
+  for (const customerId of customerIds) {
+    // Campaigns
+    const { rows: campRows, error: campErr } = await syncGoogleAccount(customerId, from, to)
+    if (campErr) { errors.push(`[${customerId}] campaigns: ${campErr}`) }
+    else if (campRows.length > 0) {
+      const { error: e } = await db.from('google_campaign_metrics').upsert(campRows, { onConflict: 'campaign_id,metric_date' })
+      if (e) errors.push(`[${customerId}] campaigns: ${e.message}`)
+      else synced += campRows.length
     }
-    const deduped = Object.values(stMap).map(r => ({
-      ...r,
-      ctr: r.impressions > 0 ? r.clicks / r.impressions : 0,
-    }))
-    const { error: e } = await db.from('google_search_term_metrics').upsert(deduped, { onConflict: 'customer_id,search_term,campaign_name,metric_date' })
-    if (e) errors.push(`search_terms: ${e.message}`)
-    else synced += deduped.length
+
+    // Keywords
+    const { rows: kwRows, error: kwErr } = await syncGoogleKeywords(customerId, from, to)
+    if (kwErr) { errors.push(`[${customerId}] keywords: ${kwErr}`) }
+    else if (kwRows.length > 0) {
+      const { error: e } = await db.from('google_keyword_metrics').upsert(kwRows, { onConflict: 'customer_id,keyword,match_type,campaign_name,metric_date' })
+      if (e) errors.push(`[${customerId}] keywords: ${e.message}`)
+      else synced += kwRows.length
+    }
+
+    // Search terms — aggregate duplicates (same term in multiple ad groups)
+    const { rows: stRows, error: stErr } = await syncGoogleSearchTerms(customerId, from, to)
+    if (stErr) { errors.push(`[${customerId}] search_terms: ${stErr}`) }
+    else if (stRows.length > 0) {
+      const stMap: Record<string, typeof stRows[0]> = {}
+      for (const r of stRows) {
+        const k = `${r.customer_id}__${r.search_term}__${r.campaign_name}__${r.metric_date}`
+        if (!stMap[k]) { stMap[k] = { ...r } }
+        else {
+          stMap[k].impressions += r.impressions
+          stMap[k].clicks += r.clicks
+          stMap[k].spend += r.spend
+          stMap[k].conversions += r.conversions
+        }
+      }
+      const deduped = Object.values(stMap).map(r => ({
+        ...r,
+        ctr: r.impressions > 0 ? r.clicks / r.impressions : 0,
+      }))
+      const { error: e } = await db.from('google_search_term_metrics').upsert(deduped, { onConflict: 'customer_id,search_term,campaign_name,metric_date' })
+      if (e) errors.push(`[${customerId}] search_terms: ${e.message}`)
+      else synced += deduped.length
+    }
   }
 
-  return NextResponse.json({ message: `Google Ads sync: ${synced} registros.`, synced, errors })
+  return NextResponse.json({
+    message: `Google Ads sync: ${synced} registros de ${customerIds.length} conta(s).`,
+    synced,
+    accounts: customerIds,
+    errors,
+  })
 }
