@@ -194,7 +194,7 @@ export default async function DashboardPage({
               </h2>
             </div>
             <div className="flex items-center gap-3">
-              <ExportPdfButton from={from} to={to} />
+              <ExportPdfButton from={from} to={to} adAccountId={selectedGoogleCustomerId} accountName={selectedGoogleCustomerId ? selectedGoogleCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : undefined} />
               <DateRangePicker defaultFrom={from} defaultTo={to} accounts={googleAccountsList} selectedAccount={selectedGoogleCustomerId} />
             </div>
           </div>
@@ -400,7 +400,13 @@ export default async function DashboardPage({
                 linkedGroupJid={selectedAccount?.report_group_jid}
                 googleCustomerId={selectedAccount?.google_customer_id}
               />
-              <ExportPdfButton from={from} to={to} />
+              <ExportPdfButton
+                from={from}
+                to={to}
+                adAccountId={selectedAccountId}
+                accountName={selectedAccount?.account_name || selectedAccountId}
+                googleCustomerId={selectedAccount?.google_customer_id}
+              />
               <DateRangePicker
                 defaultFrom={from}
                 defaultTo={to}

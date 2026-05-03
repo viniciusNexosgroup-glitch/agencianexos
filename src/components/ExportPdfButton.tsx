@@ -5,6 +5,9 @@ import { useState } from 'react'
 interface Props {
   from: string
   to: string
+  adAccountId?: string
+  accountName?: string
+  googleCustomerId?: string | null
 }
 
 const MATCH_LABEL: Record<string, string> = {
@@ -18,13 +21,15 @@ function brl(n: number) {
 function fmtInt(n: number) { return n.toLocaleString('pt-BR') }
 function pct(n: number) { return `${n.toFixed(2)}%` }
 
-export function ExportPdfButton({ from, to }: Props) {
+export function ExportPdfButton({ from, to, adAccountId, accountName, googleCustomerId }: Props) {
   const [loading, setLoading] = useState(false)
 
   async function handleExport() {
     setLoading(true)
     try {
-      const res = await fetch(`/api/report-data?from=${from}&to=${to}`)
+      const accountParam = adAccountId ? `&account=${adAccountId}` : ''
+      const googleParam = googleCustomerId ? `&google_customer=${googleCustomerId}` : ''
+      const res = await fetch(`/api/report-data?from=${from}&to=${to}${accountParam}${googleParam}`)
       const data = await res.json()
 
       const { jsPDF } = await import('jspdf')
@@ -75,7 +80,8 @@ export function ExportPdfButton({ from, to }: Props) {
       doc.setTextColor(255, 255, 255)
       doc.setFontSize(16)
       doc.setFont('helvetica', 'bold')
-      doc.text('Relatório de Tráfego Pago', 14, 13)
+      const title = accountName ? `Relatório — ${accountName}` : 'Relatório de Tráfego Pago'
+      doc.text(title, 14, 13)
       doc.setFontSize(9)
       doc.setFont('helvetica', 'normal')
       doc.setTextColor(...GRAY)
@@ -233,7 +239,8 @@ export function ExportPdfButton({ from, to }: Props) {
         )
       }
 
-      doc.save(`relatorio-${from}-${to}.pdf`)
+      const slug = accountName ? `-${accountName.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-')}` : ''
+      doc.save(`relatorio${slug}-${from}-${to}.pdf`)
     } catch (err) {
       console.error('Erro ao gerar PDF:', err)
       alert('Erro ao gerar PDF. Tente novamente.')
