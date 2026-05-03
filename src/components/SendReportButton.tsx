@@ -17,6 +17,7 @@ interface Group {
 
 export function SendReportButton({ from, to, adAccountId, accountName, linkedGroupJid }: Props) {
   const [groups, setGroups] = useState<Group[]>([])
+  const [instanceName, setInstanceName] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [loadingGroups, setLoadingGroups] = useState(false)
   const [groupError, setGroupError] = useState('')
@@ -50,6 +51,7 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
     if (!res.ok || data.error) {
       setGroupError(data.error || 'Erro ao carregar grupos')
     } else {
+      setInstanceName(data.instanceName || '')
       setGroups([...(data.groups || [])].sort((a, b) =>
         a.subject.localeCompare(b.subject, 'pt-BR', { numeric: true, sensitivity: 'base' })
       ))
@@ -250,11 +252,7 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
                   {filteredGroups.map(g => (
                     <button
                       key={g.id}
-                      onClick={async () => {
-                        const res = await fetch('/api/whatsapp/groups')
-                        const d = await res.json()
-                        linkGroup(g, d.instanceName)
-                      }}
+                      onClick={() => linkGroup(g, instanceName)}
                       className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition ${
                         linkedJid === g.id
                           ? 'bg-indigo-700 text-white'
