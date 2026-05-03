@@ -648,6 +648,7 @@ export function ChatPanel({
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
+  const latestTimestampRef = useRef<string | null>(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -854,38 +855,35 @@ export function ChatPanel({
       })
       .subscribe()
 
-    // Loop de polling como fallback (Realtime é primário; poll só adiciona msgs que não chegaram via socket)
-    const POLL_SELECT_FULL = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions, status'
-    const POLL_SELECT_BASE = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions'
+    // Polling incremental como fallback (Realtime é primário; intervalo longo para economizar egress)
+    // Não inclui media_data — carregado pelo load() inicial e por realtime UPDATE
+    const POLL_SELECT = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions, status'
     let active = true
     async function pollLoop() {
       while (active) {
-        await new Promise(r => setTimeout(r, 4000))
+        await new Promise(r => setTimeout(r, 30000))
         if (!active) break
         try {
           const sb2 = createBrowserClient()
-          let { data } = await sb2
+          const after = latestTimestampRef.current
+          // Só busca mensagens mais novas que a última conhecida (0 rows em estado estável)
+          const q = sb2
             .from('whatsapp_messages')
-            .select(POLL_SELECT_FULL)
+            .select(POLL_SELECT)
             .eq('contact_id', contact.id)
-            .order('timestamp', { ascending: false })
-            .limit(50)
-          if (!data) {
-            const res = await sb2
-              .from('whatsapp_messages')
-              .select(POLL_SELECT_BASE)
-              .eq('contact_id', contact.id)
-              .order('timestamp', { ascending: false })
-              .limit(50)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            data = res.data as any
-          }
-          if (data) {
-            const latest = (data as Message[]).reverse()
-            // Merge: adiciona apenas mensagens novas, preserva antigas (carregadas via loadMore)
+            .order('timestamp', { ascending: true })
+            .limit(20)
+          const { data } = after
+            ? await q.gt('timestamp', after)
+            : await q.order('timestamp', { ascending: false }).limit(50)
+          if (data && data.length > 0) {
+            const newMsgs = after ? data as Message[] : (data as Message[]).reverse()
+            if (newMsgs.length > 0) {
+              latestTimestampRef.current = newMsgs[newMsgs.length - 1].timestamp
+            }
             setMessages(prev => {
               const existingIds = new Set(prev.map(m => m.id))
-              const newOnes = latest.filter(m => !existingIds.has(m.id))
+              const newOnes = newMsgs.filter(m => !existingIds.has(m.id))
               if (newOnes.length === 0) return prev
               return [...prev, ...newOnes].sort((a, b) =>
                 new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
@@ -989,11 +987,13 @@ export function ChatPanel({
         isAtBottomRef.current = true
         const msgs = (data2 ?? []).reverse()
         setMessages(msgs)
+        latestTimestampRef.current = msgs[msgs.length - 1]?.timestamp ?? null
         setHasMore((data2?.length ?? 0) === 50)
       } else {
         isAtBottomRef.current = true
         const msgs = (data ?? []).reverse()
         setMessages(msgs)
+        latestTimestampRef.current = msgs[msgs.length - 1]?.timestamp ?? null
         setHasMore((data?.length ?? 0) === 50)
       }
       setLoading(false)

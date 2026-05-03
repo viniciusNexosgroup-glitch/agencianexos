@@ -668,11 +668,11 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
       })
       .subscribe()
 
-    // Loop de polling como fallback (caso Realtime não dispare)
+    // Polling como fallback (Realtime é primário; intervalo longo para economizar egress)
     let active = true
     async function pollLoop() {
       while (active) {
-        await new Promise(r => setTimeout(r, 4000))
+        await new Promise(r => setTimeout(r, 60000))
         if (!active) break
         try {
           const raw = await fetchContacts()
