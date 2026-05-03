@@ -13,6 +13,7 @@ import { GoogleCampaignTable } from '@/components/GoogleCampaignTable'
 import { GoogleKeywordTable } from '@/components/GoogleKeywordTable'
 import { ExportPdfButton } from '@/components/ExportPdfButton'
 import { SendReportButton } from '@/components/SendReportButton'
+import { LinkGoogleButton } from '@/components/LinkGoogleButton'
 import { DiscoverAccountsButton } from '@/components/DiscoverAccountsButton'
 import { DateRangePicker } from '@/components/DateRangePicker'
 import { DashboardTabs } from '@/components/DashboardTabs'
@@ -202,7 +203,7 @@ export default async function DashboardPage({
   // ── META ADS ────────────────────────────────────────────────────
   const { data: accounts } = await supabase
     .from('client_accounts')
-    .select('ad_account_id, account_name, bm_name, report_group_jid')
+    .select('ad_account_id, account_name, bm_name, report_group_jid, google_customer_id')
     .eq('is_active', true)
 
   const allAccounts = (accounts || []).sort((a, b) =>
@@ -368,12 +369,17 @@ export default async function DashboardPage({
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-3">
               <DiscoverAccountsButton compact />
+              <LinkGoogleButton
+                adAccountId={selectedAccountId}
+                linkedCustomerId={selectedAccount?.google_customer_id}
+              />
               <SendReportButton
                 from={from}
                 to={to}
                 adAccountId={selectedAccountId}
                 accountName={selectedAccount?.account_name || selectedAccountId}
                 linkedGroupJid={selectedAccount?.report_group_jid}
+                googleCustomerId={selectedAccount?.google_customer_id}
               />
               <ExportPdfButton from={from} to={to} />
               <DateRangePicker

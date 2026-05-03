@@ -8,6 +8,7 @@ interface Props {
   adAccountId: string
   accountName: string
   linkedGroupJid?: string | null
+  googleCustomerId?: string | null
 }
 
 interface Group {
@@ -15,7 +16,7 @@ interface Group {
   subject: string
 }
 
-export function SendReportButton({ from, to, adAccountId, accountName, linkedGroupJid }: Props) {
+export function SendReportButton({ from, to, adAccountId, accountName, linkedGroupJid, googleCustomerId }: Props) {
   const [groups, setGroups] = useState<Group[]>([])
   const [instanceName, setInstanceName] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -87,7 +88,8 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
       const jsPDF = (await import('jspdf')).default
       const autoTable = (await import('jspdf-autotable')).default
 
-      const res = await fetch(`/api/report-data?from=${from}&to=${to}&account=${adAccountId}`)
+      const googleParam = googleCustomerId ? `&google_customer=${googleCustomerId}` : ''
+      const res = await fetch(`/api/report-data?from=${from}&to=${to}&account=${adAccountId}${googleParam}`)
       const data = await res.json()
 
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
@@ -145,6 +147,49 @@ export function SendReportButton({ from, to, adAccountId, accountName, linkedGro
             margin: { left: 14, right: 14 },
           })
           y = (doc as any).lastAutoTable.finalY + 8
+        }
+      }
+
+      // Google Ads section (only if linked and has data)
+      const g = data.google
+      if (g && (g.totals?.spend || 0) > 0) {
+        if (y > 150) { doc.addPage(); y = 20 }
+        doc.setFontSize(11); doc.setTextColor(66, 133, 244)
+        doc.text('Google Ads', 14, y); y += 6
+
+        autoTable(doc, {
+          startY: y,
+          head: [['Investido', 'Impressões', 'Cliques', 'CTR', 'Conversões', 'Custo/Conv.']],
+          body: [[
+            `R$ ${(g.totals?.spend || 0).toFixed(2)}`,
+            (g.totals?.impressions || 0).toLocaleString('pt-BR'),
+            (g.totals?.clicks || 0).toLocaleString('pt-BR'),
+            `${(g.totals?.ctr || 0).toFixed(2)}%`,
+            (g.totals?.conversions || 0).toLocaleString('pt-BR'),
+            g.totals?.custo_resultado != null ? `R$ ${g.totals.custo_resultado.toFixed(2)}` : '—',
+          ]],
+          styles: { fontSize: 8, cellPadding: 3 },
+          headStyles: { fillColor: [66, 133, 244] },
+          margin: { left: 14, right: 14 },
+        })
+        y = (doc as any).lastAutoTable.finalY + 8
+
+        if (g.campaigns?.length > 0) {
+          autoTable(doc, {
+            startY: y,
+            head: [['Campanha', 'Investido', 'Impressões', 'Cliques', 'Conversões', 'Custo/Conv.']],
+            body: g.campaigns.map((c: any) => [
+              c.campaign_name,
+              `R$ ${(c.spend || 0).toFixed(2)}`,
+              (c.impressions || 0).toLocaleString('pt-BR'),
+              (c.clicks || 0).toLocaleString('pt-BR'),
+              (c.conversions || 0).toLocaleString('pt-BR'),
+              c.custo_resultado != null ? `R$ ${c.custo_resultado.toFixed(2)}` : '—',
+            ]),
+            styles: { fontSize: 7 },
+            headStyles: { fillColor: [30, 41, 59] },
+            margin: { left: 14, right: 14 },
+          })
         }
       }
 

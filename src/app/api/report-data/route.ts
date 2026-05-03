@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get('from') || ''
   const to = searchParams.get('to') || ''
   const account = searchParams.get('account') || ''
+  const googleCustomer = searchParams.get('google_customer') || ''
 
   const db = supabase()
 
@@ -34,14 +35,20 @@ export async function GET(req: NextRequest) {
     adQuery = adQuery.eq('ad_account_id', account)
   }
 
+  const googleFetches = googleCustomer
+    ? [
+        db.from('google_campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to).eq('customer_id', googleCustomer),
+        db.from('google_keyword_metrics').select('keyword,match_type,campaign_name,impressions,clicks,spend,conversions').gte('metric_date', from).lte('metric_date', to).eq('customer_id', googleCustomer),
+      ]
+    : [
+        Promise.resolve({ data: [] as any[] }),
+        Promise.resolve({ data: [] as any[] }),
+      ]
+
   const [{ data: metaMetrics }, { data: adMetrics }, { data: googleMetrics }, { data: kwMetrics }] = await Promise.all([
     metaQuery,
     adQuery,
-    db.from('google_campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to),
-    db.from('google_keyword_metrics')
-      .select('keyword,match_type,campaign_name,impressions,clicks,spend,conversions')
-      .gte('metric_date', from)
-      .lte('metric_date', to),
+    ...googleFetches,
   ])
 
   // Aggregate Meta campaigns
