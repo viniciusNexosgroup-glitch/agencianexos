@@ -54,6 +54,18 @@ export default async function DashboardPage({
   const from = params.from || daysAgo(30)
   const to = params.to || new Date().toISOString().split('T')[0]
 
+  // ── CONTAS (compartilhado entre abas) ───────────────────────────
+  const { data: accounts } = await supabase
+    .from('client_accounts')
+    .select('ad_account_id, account_name, bm_name, report_group_jid, google_customer_id')
+    .eq('is_active', true)
+
+  const allAccounts = (accounts || []).sort((a, b) =>
+    (a.account_name || '').localeCompare(b.account_name || '', 'pt-BR', { numeric: true, sensitivity: 'base' })
+  )
+  const selectedAccountId = params.account || allAccounts[0]?.ad_account_id || ''
+  const selectedAccount = allAccounts.find(a => a.ad_account_id === selectedAccountId)
+
   // ── GOOGLE ADS ──────────────────────────────────────────────────
   if (tab === 'google') {
     const [{ data: gMetrics }, { data: kwMetrics }, { data: stMetrics }] = await Promise.all([
@@ -162,13 +174,23 @@ export default async function DashboardPage({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-3">
               <DashboardTabs active="google" />
-              <h2 className="text-white text-xl font-semibold">Google Ads — Conta {process.env.GOOGLE_ADS_CUSTOMER_ID}</h2>
+              <div>
+                <h2 className="text-white text-xl font-semibold">
+                  Google Ads{selectedAccount ? ` — ${selectedAccount.account_name}` : ''}
+                </h2>
+                {selectedAccount?.bm_name && (
+                  <p className="text-slate-400 text-sm">BM: {selectedAccount.bm_name}</p>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-3">
+              <DiscoverAccountsButton compact />
               <ExportPdfButton from={from} to={to} />
-              <DateRangePicker defaultFrom={from} defaultTo={to} accounts={[]} selectedAccount="" />
+              <DateRangePicker defaultFrom={from} defaultTo={to} accounts={allAccounts} selectedAccount={selectedAccountId} />
             </div>
           </div>
+
+          <BalanceCard accountId={selectedAccountId} avgDailySpend={0} />
 
           {gRows.length === 0 ? (
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-12 text-center">
@@ -201,15 +223,6 @@ export default async function DashboardPage({
   }
 
   // ── META ADS ────────────────────────────────────────────────────
-  const { data: accounts } = await supabase
-    .from('client_accounts')
-    .select('ad_account_id, account_name, bm_name, report_group_jid, google_customer_id')
-    .eq('is_active', true)
-
-  const allAccounts = (accounts || []).sort((a, b) =>
-    (a.account_name || '').localeCompare(b.account_name || '', 'pt-BR', { numeric: true, sensitivity: 'base' })
-  )
-  const selectedAccountId = params.account || allAccounts[0]?.ad_account_id || ''
   const accountIds = [selectedAccountId].filter(Boolean)
 
   const { data: metrics } = await supabase
@@ -348,8 +361,6 @@ export default async function DashboardPage({
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-
-  const selectedAccount = allAccounts.find(a => a.ad_account_id === selectedAccountId)
 
   return (
     <div className="flex-1">
