@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
 import { MetricCard } from '@/components/MetricCard'
+import { BalanceCard } from '@/components/BalanceCard'
 import { SpendChart } from '@/components/SpendChart'
 import { CampaignTable } from '@/components/CampaignTable'
 import { CreativeGrid } from '@/components/CreativeGrid'
@@ -236,6 +237,9 @@ export default async function DashboardPage({
     { spend: 0, impressions: 0, reach: 0, clicks: 0, purchases: 0, purchase_value: 0, leads: 0, checkouts: 0, conversations: 0, profile_visits: 0 }
   )
 
+  const periodDays = Math.max(1, Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+  const avgDailySpend = totals.spend / periodDays
+
   const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
   // Prioridade: conversas > leads > compras > visitas ao perfil
   const resultado = totals.conversations > 0 ? totals.conversations
@@ -391,6 +395,7 @@ export default async function DashboardPage({
         ) : (
           <>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              <BalanceCard accountId={selectedAccountId} avgDailySpend={avgDailySpend} />
               <MetricCard label="Valor Usado" value={`R$ ${fmt(totals.spend)}`} icon="💰" color="indigo" />
               <MetricCard label="Alcance" value={fmtInt(totals.reach)} icon="👥" color="slate" />
               <MetricCard label="Resultado" value={fmtInt(resultado)} icon="✅" color={resultado > 0 ? 'green' : 'slate'} />
