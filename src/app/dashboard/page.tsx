@@ -68,23 +68,38 @@ export default async function DashboardPage({
 
   // ── GOOGLE ADS ──────────────────────────────────────────────────
   if (tab === 'google') {
+    // Busca customer IDs distintos do Google
+    const { data: gCustomerRows } = await supabase
+      .from('google_campaign_metrics')
+      .select('customer_id')
+      .limit(500)
+
+    const googleCustomerIds = [...new Set((gCustomerRows || []).map(r => r.customer_id as string))]
+    const selectedGoogleCustomerId = googleCustomerIds.includes(params.account || '')
+      ? params.account || ''
+      : googleCustomerIds[0] || ''
+
+    const googleAccountsList = googleCustomerIds.map(id => ({
+      ad_account_id: id,
+      account_name: id.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3'),
+      bm_name: null as string | null,
+      report_group_jid: null as string | null,
+      google_customer_id: null as string | null,
+    }))
+
     const [{ data: gMetrics }, { data: kwMetrics }, { data: stMetrics }] = await Promise.all([
-      supabase
-        .from('google_campaign_metrics')
-        .select('*')
-        .gte('metric_date', from)
-        .lte('metric_date', to)
-        .order('metric_date', { ascending: true }),
-      supabase
-        .from('google_keyword_metrics')
-        .select('keyword, match_type, campaign_name, ad_group_name, impressions, clicks, spend, conversions, ctr')
-        .gte('metric_date', from)
-        .lte('metric_date', to),
-      supabase
-        .from('google_search_term_metrics')
-        .select('search_term, campaign_name, ad_group_name, impressions, clicks, spend, conversions, ctr')
-        .gte('metric_date', from)
-        .lte('metric_date', to),
+      (selectedGoogleCustomerId
+        ? supabase.from('google_campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to).eq('customer_id', selectedGoogleCustomerId).order('metric_date', { ascending: true })
+        : supabase.from('google_campaign_metrics').select('*').gte('metric_date', from).lte('metric_date', to).order('metric_date', { ascending: true })
+      ),
+      (selectedGoogleCustomerId
+        ? supabase.from('google_keyword_metrics').select('keyword, match_type, campaign_name, ad_group_name, impressions, clicks, spend, conversions, ctr').gte('metric_date', from).lte('metric_date', to).eq('customer_id', selectedGoogleCustomerId)
+        : supabase.from('google_keyword_metrics').select('keyword, match_type, campaign_name, ad_group_name, impressions, clicks, spend, conversions, ctr').gte('metric_date', from).lte('metric_date', to)
+      ),
+      (selectedGoogleCustomerId
+        ? supabase.from('google_search_term_metrics').select('search_term, campaign_name, ad_group_name, impressions, clicks, spend, conversions, ctr').gte('metric_date', from).lte('metric_date', to).eq('customer_id', selectedGoogleCustomerId)
+        : supabase.from('google_search_term_metrics').select('search_term, campaign_name, ad_group_name, impressions, clicks, spend, conversions, ctr').gte('metric_date', from).lte('metric_date', to)
+      ),
     ])
 
     const gRows = gMetrics || []
@@ -174,23 +189,15 @@ export default async function DashboardPage({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-3">
               <DashboardTabs active="google" />
-              <div>
-                <h2 className="text-white text-xl font-semibold">
-                  Google Ads{selectedAccount ? ` — ${selectedAccount.account_name}` : ''}
-                </h2>
-                {selectedAccount?.bm_name && (
-                  <p className="text-slate-400 text-sm">BM: {selectedAccount.bm_name}</p>
-                )}
-              </div>
+              <h2 className="text-white text-xl font-semibold">
+                Google Ads{selectedGoogleCustomerId ? ` — ${selectedGoogleCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}` : ''}
+              </h2>
             </div>
             <div className="flex items-center gap-3">
-              <DiscoverAccountsButton compact />
               <ExportPdfButton from={from} to={to} />
-              <DateRangePicker defaultFrom={from} defaultTo={to} accounts={allAccounts} selectedAccount={selectedAccountId} />
+              <DateRangePicker defaultFrom={from} defaultTo={to} accounts={googleAccountsList} selectedAccount={selectedGoogleCustomerId} />
             </div>
           </div>
-
-          <BalanceCard accountId={selectedAccountId} avgDailySpend={0} />
 
           {gRows.length === 0 ? (
             <div className="bg-[#111827] border border-slate-800 rounded-2xl p-12 text-center">
