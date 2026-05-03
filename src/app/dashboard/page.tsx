@@ -381,6 +381,7 @@ export default async function DashboardPage({
             <div className="flex items-center gap-3">
               <DiscoverAccountsButton compact />
               <LinkGoogleButton
+                key={selectedAccountId}
                 adAccountId={selectedAccountId}
                 linkedCustomerId={selectedAccount?.google_customer_id}
               />
