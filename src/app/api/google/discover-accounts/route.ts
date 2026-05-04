@@ -36,30 +36,58 @@ export async function POST() {
       .filter((rn: any) => typeof rn === 'string')
       .map((rn: string) => rn.replace('customers/', ''))
 
-    const accounts = await Promise.all(customerIds.map(async (id: string) => {
+    // Primeiro identifica qual é a conta gerente para usar como login_customer_id
+    let managerCustomerId: string | null = null
+    const accountInfos: { customer_id: string; name: string; currency: string; is_manager: boolean }[] = []
+
+    for (const id of customerIds) {
       try {
         const customer = client.Customer({ customer_id: id, refresh_token: refreshToken })
         const [row] = await customer.query(
           `SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer LIMIT 1`
         ) as any[]
-        return {
+        const isManager = row?.customer?.manager === true
+        if (isManager && !managerCustomerId) managerCustomerId = id
+        accountInfos.push({
           customer_id: id,
           name: row?.customer?.descriptive_name || id,
           currency: row?.customer?.currency_code || 'BRL',
-          is_manager: row?.customer?.manager === true,
-        }
+          is_manager: isManager,
+        })
       } catch {
-        return { customer_id: id, name: id, currency: 'BRL', is_manager: false }
+        accountInfos.push({ customer_id: id, name: '', currency: 'BRL', is_manager: false })
       }
-    }))
+    }
 
-    const leafAccounts = accounts.filter(a => !a.is_manager)
+    // Para contas sem nome (query falhou), tenta de novo via conta gerente
+    if (managerCustomerId) {
+      for (const info of accountInfos) {
+        if (info.name || info.is_manager) continue
+        try {
+          const customer = client.Customer({
+            customer_id: info.customer_id,
+            refresh_token: refreshToken,
+            login_customer_id: managerCustomerId,
+          })
+          const [row] = await customer.query(
+            `SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer LIMIT 1`
+          ) as any[]
+          info.name = row?.customer?.descriptive_name || info.customer_id
+          info.currency = row?.customer?.currency_code || 'BRL'
+          info.is_manager = row?.customer?.manager === true
+        } catch {
+          info.name = info.customer_id
+        }
+      }
+    }
+
+    const leafAccounts = accountInfos.filter(a => !a.is_manager)
 
     if (leafAccounts.length > 0) {
       await supabase.from('google_accounts').upsert(
         leafAccounts.map(a => ({
           customer_id: a.customer_id,
-          name: a.name,
+          name: a.name || a.customer_id,
           currency: a.currency,
           is_active: true,
           updated_at: new Date().toISOString(),
@@ -74,7 +102,6 @@ export async function POST() {
       accounts: leafAccounts.map(a => ({ customer_id: a.customer_id, name: a.name })),
     })
   } catch (err: any) {
-    console.error('[discover-accounts] erro completo:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
     const msg = err?.message
       || (Array.isArray(err?.errors) ? err.errors.map((e: any) => e?.message || JSON.stringify(e)).join('; ') : null)
       || JSON.stringify(err, Object.getOwnPropertyNames(err))
