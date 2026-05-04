@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
   }
 
   const lines = alerts
-    .sort((a, b) => a.balance - b.balance)
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true }))
     .map(a => {
       const dias = a.daysLeft !== null
         ? `~${a.daysLeft} dia${a.daysLeft !== 1 ? 's' : ''}`
