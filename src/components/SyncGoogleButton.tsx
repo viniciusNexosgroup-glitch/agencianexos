@@ -44,7 +44,7 @@ export function SyncGoogleButton({ from, to, customerId }: Props) {
 
   return (
     <div className="flex items-center gap-2">
-      {error && <span className="text-xs text-red-400 max-w-[200px] truncate" title={error}>{error}</span>}
+      {error && <span className="text-xs text-red-400 max-w-[400px] break-all" title={error}>{error}</span>}
       {result && <span className="text-xs text-emerald-400">{result}</span>}
       <button
         onClick={sync}

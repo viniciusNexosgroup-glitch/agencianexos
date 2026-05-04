@@ -73,7 +73,11 @@ export async function syncGoogleAccount(
 
     return { rows }
   } catch (err: any) {
-    return { rows: [], error: err.message || String(err) }
+    const msg = err?.message
+      || (Array.isArray(err?.errors) ? err.errors.map((e: any) => e?.message || JSON.stringify(e)).join('; ') : null)
+      || JSON.stringify(err, Object.getOwnPropertyNames(err))
+      || String(err)
+    return { rows: [], error: msg }
   }
 }
 
@@ -161,7 +165,11 @@ export async function syncGoogleKeywords(
 
     return { rows }
   } catch (err: any) {
-    return { rows: [], error: err.message || String(err) }
+    const msg = err?.message
+      || (Array.isArray(err?.errors) ? err.errors.map((e: any) => e?.message || JSON.stringify(e)).join('; ') : null)
+      || JSON.stringify(err, Object.getOwnPropertyNames(err))
+      || String(err)
+    return { rows: [], error: msg }
   }
 }
 
@@ -219,7 +227,11 @@ export async function syncGoogleSearchTerms(
 
     return { rows }
   } catch (err: any) {
-    return { rows: [], error: err.message || String(err) }
+    const msg = err?.message
+      || (Array.isArray(err?.errors) ? err.errors.map((e: any) => e?.message || JSON.stringify(e)).join('; ') : null)
+      || JSON.stringify(err, Object.getOwnPropertyNames(err))
+      || String(err)
+    return { rows: [], error: msg }
   }
 }
 
