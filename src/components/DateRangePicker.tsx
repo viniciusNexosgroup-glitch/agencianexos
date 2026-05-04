@@ -10,6 +10,7 @@ interface Props {
   defaultTo: string
   accounts: Account[]
   selectedAccount: string
+  tab?: string
 }
 
 const PRESETS = [
@@ -44,7 +45,7 @@ function currMonthRange(): { from: string; to: string } {
   }
 }
 
-export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAccount }: Props) {
+export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAccount, tab }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [from, setFrom] = useState(defaultFrom)
@@ -52,9 +53,15 @@ export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAcco
   const [account, setAccount] = useState(selectedAccount)
   const [syncing, setSyncing] = useState(false)
 
+  function buildUrl(f: string, t: string, acc: string) {
+    const p = new URLSearchParams({ from: f, to: t, account: acc })
+    if (tab) p.set('tab', tab)
+    return `/dashboard?${p.toString()}`
+  }
+
   function apply(f = from, t = to, acc = account) {
     startTransition(() => {
-      router.push(`/dashboard?from=${f}&to=${t}&account=${acc}`)
+      router.push(buildUrl(f, t, acc))
     })
   }
 
@@ -62,7 +69,7 @@ export function DateRangePicker({ defaultFrom, defaultTo, accounts, selectedAcco
     setAccount(newAccount)
     setSyncing(true)
     startTransition(() => {
-      router.push(`/dashboard?from=${f}&to=${t}&account=${newAccount}`)
+      router.push(buildUrl(f, t, newAccount))
     })
     try {
       await fetch('/api/sync-ads', {

@@ -220,14 +220,14 @@ export default async function DashboardPage({
             <div className="space-y-3">
               <DashboardTabs active="google" />
               <h2 className="text-white text-xl font-semibold">
-                Google Ads{selectedGoogleCustomerId ? ` — ${selectedGoogleCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}` : ''}
+                Google Ads{selectedGoogleCustomerId ? ` — ${googleAccountsList.find(a => a.ad_account_id === selectedGoogleCustomerId)?.account_name || selectedGoogleCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}` : ''}
               </h2>
             </div>
             <div className="flex items-center gap-3">
               <ConnectGoogleButton connected={googleConnected} />
               {googleConnected && <DiscoverGoogleAccountsButton />}
-              <ExportPdfButton from={from} to={to} adAccountId={selectedGoogleCustomerId} accountName={selectedGoogleCustomerId ? selectedGoogleCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : undefined} />
-              <DateRangePicker defaultFrom={from} defaultTo={to} accounts={googleAccountsList} selectedAccount={selectedGoogleCustomerId} />
+              <ExportPdfButton from={from} to={to} adAccountId={selectedGoogleCustomerId} accountName={googleAccountsList.find(a => a.ad_account_id === selectedGoogleCustomerId)?.account_name || selectedGoogleCustomerId} />
+              <DateRangePicker defaultFrom={from} defaultTo={to} accounts={googleAccountsList} selectedAccount={selectedGoogleCustomerId} tab="google" />
             </div>
           </div>
 
