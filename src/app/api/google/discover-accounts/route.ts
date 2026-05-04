@@ -69,7 +69,11 @@ export async function POST() {
       accounts: leafAccounts.map(a => ({ customer_id: a.customer_id, name: a.name })),
     })
   } catch (err: any) {
-    const msg = err?.message || err?.details || String(err)
+    console.error('[discover-accounts] erro completo:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
+    const msg = err?.message
+      || (Array.isArray(err?.errors) ? err.errors.map((e: any) => e?.message || JSON.stringify(e)).join('; ') : null)
+      || JSON.stringify(err, Object.getOwnPropertyNames(err))
+      || 'Erro desconhecido'
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
