@@ -69,6 +69,7 @@ export async function POST() {
       accounts: leafAccounts.map(a => ({ customer_id: a.customer_id, name: a.name })),
     })
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || String(err) }, { status: 500 })
+    const msg = err?.message || err?.details || String(err)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
