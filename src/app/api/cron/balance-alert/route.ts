@@ -50,7 +50,9 @@ export async function GET(req: NextRequest) {
     spendByAccount[m.ad_account_id].days.add(m.metric_date)
   }
 
+  const debug = req.nextUrl.searchParams.get('debug') === '1'
   const alerts: { name: string; balance: number; daysLeft: number | null }[] = []
+  const debugRows: { id: string; name: string; is_prepay: any; balance_raw: any }[] = []
 
   for (const account of accounts) {
     try {
@@ -59,6 +61,7 @@ export async function GET(req: NextRequest) {
         { signal: AbortSignal.timeout(10000) }
       )
       const data = await res.json()
+      if (debug) debugRows.push({ id: account.ad_account_id, name: account.account_name, is_prepay: data.is_prepay_account, balance_raw: data.balance })
       if (data.error || data.balance == null) continue
       if (!data.is_prepay_account) continue // pula contas pós-pagas
 
@@ -74,6 +77,8 @@ export async function GET(req: NextRequest) {
       }
     } catch { /* pula conta com erro */ }
   }
+
+  if (debug) return NextResponse.json({ debug: debugRows })
 
   if (alerts.length === 0) {
     return NextResponse.json({ ok: true, alerts: 0 })
