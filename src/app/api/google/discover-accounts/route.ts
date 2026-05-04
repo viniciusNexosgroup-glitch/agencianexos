@@ -14,6 +14,8 @@ export async function POST() {
     return NextResponse.json({ error: 'Google Ads não conectado. Use o botão "Conectar Google Ads".' }, { status: 400 })
   }
 
+  const managerId = (process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID || '').trim()
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -36,52 +38,27 @@ export async function POST() {
       .filter((rn: any) => typeof rn === 'string')
       .map((rn: string) => rn.replace('customers/', ''))
 
-    // Primeiro identifica qual é a conta gerente para usar como login_customer_id
-    let managerCustomerId: string | null = null
-    const accountInfos: { customer_id: string; name: string; currency: string; is_manager: boolean }[] = []
-
-    for (const id of customerIds) {
+    const accounts = await Promise.all(customerIds.map(async (id: string) => {
       try {
-        const customer = client.Customer({ customer_id: id, refresh_token: refreshToken })
+        const cfg: any = { customer_id: id, refresh_token: refreshToken }
+        if (managerId && id !== managerId) cfg.login_customer_id = managerId
+
+        const customer = client.Customer(cfg)
         const [row] = await customer.query(
           `SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer LIMIT 1`
         ) as any[]
-        const isManager = row?.customer?.manager === true
-        if (isManager && !managerCustomerId) managerCustomerId = id
-        accountInfos.push({
+        return {
           customer_id: id,
           name: row?.customer?.descriptive_name || id,
           currency: row?.customer?.currency_code || 'BRL',
-          is_manager: isManager,
-        })
-      } catch {
-        accountInfos.push({ customer_id: id, name: '', currency: 'BRL', is_manager: false })
-      }
-    }
-
-    // Para contas sem nome (query falhou), tenta de novo via conta gerente
-    if (managerCustomerId) {
-      for (const info of accountInfos) {
-        if (info.name || info.is_manager) continue
-        try {
-          const customer = client.Customer({
-            customer_id: info.customer_id,
-            refresh_token: refreshToken,
-            login_customer_id: managerCustomerId,
-          })
-          const [row] = await customer.query(
-            `SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer LIMIT 1`
-          ) as any[]
-          info.name = row?.customer?.descriptive_name || info.customer_id
-          info.currency = row?.customer?.currency_code || 'BRL'
-          info.is_manager = row?.customer?.manager === true
-        } catch {
-          info.name = info.customer_id
+          is_manager: row?.customer?.manager === true,
         }
+      } catch {
+        return { customer_id: id, name: id, currency: 'BRL', is_manager: false }
       }
-    }
+    }))
 
-    const leafAccounts = accountInfos.filter(a => !a.is_manager)
+    const leafAccounts = accounts.filter(a => !a.is_manager)
 
     if (leafAccounts.length > 0) {
       await supabase.from('google_accounts').upsert(

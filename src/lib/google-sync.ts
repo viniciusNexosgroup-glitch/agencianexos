@@ -31,10 +31,11 @@ export async function syncGoogleAccount(
       developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!,
     })
 
-    const customer = client.Customer({
-      customer_id: customerId,
-      refresh_token: refreshToken,
-    })
+    const customerConfig: any = { customer_id: customerId, refresh_token: refreshToken }
+    const managerId = (process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID || '').trim()
+    if (managerId) customerConfig.login_customer_id = managerId
+
+    const customer = client.Customer(customerConfig)
 
     const results = await customer.query(`
       SELECT
@@ -118,10 +119,11 @@ export async function syncGoogleKeywords(
       client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET!,
       developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!,
     })
-    const customer = client.Customer({
-      customer_id: customerId,
-      refresh_token: refreshToken,
-    })
+    const customerConfig: any = { customer_id: customerId, refresh_token: refreshToken }
+    const managerId = (process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID || '').trim()
+    if (managerId) customerConfig.login_customer_id = managerId
+
+    const customer = client.Customer(customerConfig)
 
     const results = await customer.query(`
       SELECT
@@ -178,10 +180,11 @@ export async function syncGoogleSearchTerms(
       client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET!,
       developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!,
     })
-    const customer = client.Customer({
-      customer_id: customerId,
-      refresh_token: refreshToken,
-    })
+    const customerConfig: any = { customer_id: customerId, refresh_token: refreshToken }
+    const managerId = (process.env.GOOGLE_ADS_MANAGER_CUSTOMER_ID || '').trim()
+    if (managerId) customerConfig.login_customer_id = managerId
+
+    const customer = client.Customer(customerConfig)
 
     const results = await customer.query(`
       SELECT
