@@ -13,11 +13,20 @@ export function ConnectGoogleButton({ connected }: { connected: boolean }) {
 
   if (status) {
     return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-950 border border-emerald-700 rounded-lg text-emerald-400 font-medium">
-        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        </svg>
-        Google Ads conectado
+      <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-950 border border-emerald-700 rounded-lg text-emerald-400 font-medium">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+          Google Ads conectado
+        </div>
+        <a
+          href="/api/google/auth"
+          className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-300 transition"
+          title="Trocar conta Google"
+        >
+          trocar
+        </a>
       </div>
     )
   }
