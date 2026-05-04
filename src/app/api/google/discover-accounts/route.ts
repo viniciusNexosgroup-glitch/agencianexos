@@ -28,8 +28,13 @@ export async function POST() {
       developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!,
     })
 
-    const resourceNames = await client.listAccessibleCustomers(refreshToken)
-    const customerIds = resourceNames.map((rn: string) => rn.replace('customers/', ''))
+    const result = await client.listAccessibleCustomers(refreshToken)
+    const resourceNames: string[] = Array.isArray(result)
+      ? result
+      : (result?.resource_names ?? result?.resourceNames ?? Object.values(result ?? {}))
+    const customerIds = resourceNames
+      .filter((rn: any) => typeof rn === 'string')
+      .map((rn: string) => rn.replace('customers/', ''))
 
     const accounts = await Promise.all(customerIds.map(async (id: string) => {
       try {
