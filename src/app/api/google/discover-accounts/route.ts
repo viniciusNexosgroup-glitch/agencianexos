@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { getGoogleRefreshToken } from '@/lib/get-google-token'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  const refreshToken = await getGoogleRefreshToken()
+  if (!refreshToken) {
+    return NextResponse.json({ error: 'Google Ads não conectado. Use o botão "Conectar Google Ads".' }, { status: 400 })
+  }
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,40 +21,22 @@ export async function POST() {
   )
 
   try {
-    const rt = (process.env.GOOGLE_ADS_REFRESH_TOKEN || '').trim()
-    const cid = (process.env.GOOGLE_ADS_CLIENT_ID || '').trim()
-    const cs = (process.env.GOOGLE_ADS_CLIENT_SECRET || '').trim()
-    const dt = (process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '').trim()
-
-    // Debug temporário — remove depois
-    console.log('[discover-accounts] cid_len:', cid.length, 'cid_start:', cid.slice(0, 8))
-    console.log('[discover-accounts] cs_len:', cs.length)
-    console.log('[discover-accounts] dt_len:', dt.length, 'dt_start:', dt.slice(0, 6))
-    console.log('[discover-accounts] rt_len:', rt.length, 'rt_start:', rt.slice(0, 10))
-
     const { GoogleAdsApi } = await import('google-ads-api')
     const client = new GoogleAdsApi({
-      client_id: cid,
-      client_secret: cs,
-      developer_token: dt,
+      client_id: process.env.GOOGLE_ADS_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET!,
+      developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN!,
     })
 
-    // Lista todos os customer IDs acessíveis pelo refresh token
-    const resourceNames = await client.listAccessibleCustomers(rt)
-
+    const resourceNames = await client.listAccessibleCustomers(refreshToken)
     const customerIds = resourceNames.map((rn: string) => rn.replace('customers/', ''))
 
-    // Busca nome e tipo de cada conta
     const accounts = await Promise.all(customerIds.map(async (id: string) => {
       try {
-        const customer = client.Customer({
-          customer_id: id,
-          refresh_token: rt,
-        })
+        const customer = client.Customer({ customer_id: id, refresh_token: refreshToken })
         const [row] = await customer.query(
           `SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.manager FROM customer LIMIT 1`
         ) as any[]
-
         return {
           customer_id: id,
           name: row?.customer?.descriptive_name || id,
@@ -60,7 +48,6 @@ export async function POST() {
       }
     }))
 
-    // Salva apenas contas folha (não gerenciadoras) no banco
     const leafAccounts = accounts.filter(a => !a.is_manager)
 
     if (leafAccounts.length > 0) {

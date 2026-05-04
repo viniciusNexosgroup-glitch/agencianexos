@@ -1,3 +1,5 @@
+import { getGoogleRefreshToken } from './get-google-token'
+
 export interface GoogleMetricRow {
   customer_id: string
   campaign_id: string
@@ -19,6 +21,9 @@ export async function syncGoogleAccount(
   toDate: string
 ): Promise<{ rows: GoogleMetricRow[]; error?: string }> {
   try {
+    const refreshToken = await getGoogleRefreshToken()
+    if (!refreshToken) return { rows: [], error: 'Google Ads não conectado. Use o botão "Conectar Google Ads" no dashboard.' }
+
     const { GoogleAdsApi } = await import('google-ads-api')
     const client = new GoogleAdsApi({
       client_id: process.env.GOOGLE_ADS_CLIENT_ID!,
@@ -28,7 +33,7 @@ export async function syncGoogleAccount(
 
     const customer = client.Customer({
       customer_id: customerId,
-      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
+      refresh_token: refreshToken,
     })
 
     const results = await customer.query(`
@@ -104,6 +109,9 @@ export async function syncGoogleKeywords(
   toDate: string
 ): Promise<{ rows: GoogleKeywordRow[]; error?: string }> {
   try {
+    const refreshToken = await getGoogleRefreshToken()
+    if (!refreshToken) return { rows: [], error: 'Google Ads não conectado.' }
+
     const { GoogleAdsApi } = await import('google-ads-api')
     const client = new GoogleAdsApi({
       client_id: process.env.GOOGLE_ADS_CLIENT_ID!,
@@ -112,7 +120,7 @@ export async function syncGoogleKeywords(
     })
     const customer = client.Customer({
       customer_id: customerId,
-      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
+      refresh_token: refreshToken,
     })
 
     const results = await customer.query(`
@@ -161,6 +169,9 @@ export async function syncGoogleSearchTerms(
   toDate: string
 ): Promise<{ rows: GoogleSearchTermRow[]; error?: string }> {
   try {
+    const refreshToken = await getGoogleRefreshToken()
+    if (!refreshToken) return { rows: [], error: 'Google Ads não conectado.' }
+
     const { GoogleAdsApi } = await import('google-ads-api')
     const client = new GoogleAdsApi({
       client_id: process.env.GOOGLE_ADS_CLIENT_ID!,
@@ -169,7 +180,7 @@ export async function syncGoogleSearchTerms(
     })
     const customer = client.Customer({
       customer_id: customerId,
-      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
+      refresh_token: refreshToken,
     })
 
     const results = await customer.query(`

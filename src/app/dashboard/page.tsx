@@ -18,6 +18,7 @@ import { DiscoverAccountsButton } from '@/components/DiscoverAccountsButton'
 import { DateRangePicker } from '@/components/DateRangePicker'
 import { DashboardTabs } from '@/components/DashboardTabs'
 import { DiscoverGoogleAccountsButton } from '@/components/DiscoverGoogleAccountsButton'
+import { ConnectGoogleButton } from '@/components/ConnectGoogleButton'
 
 function fmt(n: number) { return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 function fmtInt(n: number) { return n.toLocaleString('pt-BR') }
@@ -66,6 +67,14 @@ export default async function DashboardPage({
   )
   const selectedAccountId = params.account || allAccounts[0]?.ad_account_id || ''
   const selectedAccount = allAccounts.find(a => a.ad_account_id === selectedAccountId)
+
+  // ── GOOGLE OAUTH STATUS ─────────────────────────────────────────
+  const { data: googleTokenRow } = await supabase
+    .from('google_oauth_tokens')
+    .select('refresh_token')
+    .eq('id', 1)
+    .single()
+  const googleConnected = !!(googleTokenRow?.refresh_token)
 
   // ── GOOGLE ADS ──────────────────────────────────────────────────
   if (tab === 'google') {
@@ -195,7 +204,8 @@ export default async function DashboardPage({
               </h2>
             </div>
             <div className="flex items-center gap-3">
-              <DiscoverGoogleAccountsButton />
+              <ConnectGoogleButton connected={googleConnected} />
+              {googleConnected && <DiscoverGoogleAccountsButton />}
               <ExportPdfButton from={from} to={to} adAccountId={selectedGoogleCustomerId} accountName={selectedGoogleCustomerId ? selectedGoogleCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : undefined} />
               <DateRangePicker defaultFrom={from} defaultTo={to} accounts={googleAccountsList} selectedAccount={selectedGoogleCustomerId} />
             </div>
