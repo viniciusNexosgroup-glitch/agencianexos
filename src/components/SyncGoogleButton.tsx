@@ -28,6 +28,8 @@ export function SyncGoogleButton({ from, to, customerId }: Props) {
       const data = await res.json()
       if (!res.ok) {
         setError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error))
+      } else if (data.errors?.length > 0) {
+        setError(data.errors[0])
       } else {
         setResult(`${data.synced ?? 0} registros sincronizados`)
         router.refresh()
