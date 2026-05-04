@@ -78,24 +78,44 @@ export default async function DashboardPage({
 
   // ── GOOGLE ADS ──────────────────────────────────────────────────
   if (tab === 'google') {
-    // Busca customer IDs distintos do Google
+    // Busca contas do Google (com nome) — fonte primária: google_accounts
+    const { data: gAccountRows } = await supabase
+      .from('google_accounts')
+      .select('customer_id, name')
+      .eq('is_active', true)
+      .order('name')
+
+    // Fallback: customer IDs distintos nos dados sincronizados
     const { data: gCustomerRows } = await supabase
       .from('google_campaign_metrics')
       .select('customer_id')
       .limit(500)
 
-    const googleCustomerIds = [...new Set((gCustomerRows || []).map(r => r.customer_id as string))]
-    const selectedGoogleCustomerId = googleCustomerIds.includes(params.account || '')
-      ? params.account || ''
-      : googleCustomerIds[0] || ''
+    const syncedIds = new Set((gCustomerRows || []).map(r => r.customer_id as string))
 
-    const googleAccountsList = googleCustomerIds.map(id => ({
+    // Merge: contas cadastradas + contas que já têm dados mas não estão na tabela
+    const googleAccountsMap = new Map<string, string>()
+    for (const a of gAccountRows || []) {
+      googleAccountsMap.set(a.customer_id, a.name || a.customer_id)
+    }
+    for (const id of syncedIds) {
+      if (!googleAccountsMap.has(id)) {
+        googleAccountsMap.set(id, id.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3'))
+      }
+    }
+
+    const googleAccountsList = Array.from(googleAccountsMap.entries()).map(([id, name]) => ({
       ad_account_id: id,
-      account_name: id.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3'),
+      account_name: name,
       bm_name: null as string | null,
       report_group_jid: null as string | null,
       google_customer_id: null as string | null,
     }))
+
+    const googleCustomerIds = googleAccountsList.map(a => a.ad_account_id)
+    const selectedGoogleCustomerId = googleCustomerIds.includes(params.account || '')
+      ? params.account || ''
+      : googleCustomerIds[0] || ''
 
     const [{ data: gMetrics }, { data: kwMetrics }, { data: stMetrics }] = await Promise.all([
       (selectedGoogleCustomerId
