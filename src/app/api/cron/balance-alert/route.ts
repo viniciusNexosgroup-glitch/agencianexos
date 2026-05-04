@@ -55,14 +55,14 @@ export async function GET(req: NextRequest) {
   for (const account of accounts) {
     try {
       const res = await fetch(
-        `https://graph.facebook.com/${version}/${account.ad_account_id}?fields=balance&access_token=${token}`,
+        `https://graph.facebook.com/${version}/${account.ad_account_id}?fields=balance,is_prepay_account&access_token=${token}`,
         { signal: AbortSignal.timeout(10000) }
       )
       const data = await res.json()
       if (data.error || data.balance == null) continue
+      if (!data.is_prepay_account) continue // pula contas pós-pagas
 
       const balance = Number(data.balance) / 100
-      if (balance <= 0) continue // conta pós-paga, sem saldo pré-pago
 
       if (balance < THRESHOLD) {
         const spendData = spendByAccount[account.ad_account_id]
