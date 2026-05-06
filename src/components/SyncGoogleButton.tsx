@@ -29,7 +29,11 @@ export function SyncGoogleButton({ from, to, customerId }: Props) {
       if (!res.ok) {
         setError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error))
       } else if (data.errors?.length > 0) {
-        setError(data.errors[0])
+        const raw = data.errors[0] as string
+        const friendly = raw.includes('developer token') || raw.includes('not valid')
+          ? 'Developer token aguardando aprovação do Google (até 3 dias úteis). Solicitação enviada hoje.'
+          : raw
+        setError(friendly)
       } else {
         setResult(`${data.synced ?? 0} registros sincronizados`)
         router.refresh()
