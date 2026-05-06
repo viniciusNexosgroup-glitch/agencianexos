@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     try {
       const res = await fetch(
         `https://graph.facebook.com/${version}/${account.ad_account_id}?fields=balance,is_prepay_account&access_token=${token}`,
-        { signal: AbortSignal.timeout(10000) }
+        { signal: AbortSignal.timeout(10000), cache: 'no-store' }
       )
       const data = await res.json()
       if (debug) debugRows.push({ id: account.ad_account_id, name: account.account_name, is_prepay: data.is_prepay_account, balance_raw: data.balance })
