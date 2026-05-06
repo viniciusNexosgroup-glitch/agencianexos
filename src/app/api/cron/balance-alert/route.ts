@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
           ? spendData.total / spendData.days.size
           : 0
         const daysLeft = avgDaily > 0 ? Math.floor(balance / avgDaily) : null
+        if (daysLeft !== null && daysLeft > 7) continue // ignora se ainda tem mais de 7 dias
         alerts.push({ name: account.account_name, balance, daysLeft })
       }
     } catch { /* pula conta com erro */ }
