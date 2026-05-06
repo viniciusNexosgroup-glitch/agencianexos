@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
 
       const balance = Number(data.balance) / 100
 
-      if (balance > 0 && balance < THRESHOLD) {
+      if (balance < THRESHOLD) {
         const spendData = spendByAccount[account.ad_account_id]
         const avgDaily = spendData && spendData.days.size > 0
           ? spendData.total / spendData.days.size
