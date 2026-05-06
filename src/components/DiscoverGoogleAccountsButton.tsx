@@ -15,8 +15,11 @@ export function DiscoverGoogleAccountsButton() {
       const res = await fetch('/api/google/discover-accounts', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
-        const msg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error)
-        setError(msg || 'Erro ao descobrir contas')
+        const raw = typeof data.error === 'string' ? data.error : JSON.stringify(data.error)
+        const msg = (raw.includes('developer token') || raw.includes('not valid'))
+          ? 'Token aguardando aprovação do Google (até 3 dias úteis).'
+          : (raw || 'Erro ao descobrir contas')
+        setError(msg)
       } else {
         setResult({ total: data.total, names: (data.accounts || []).map((a: any) => a.name) })
         setTimeout(() => setResult(null), 6000)
