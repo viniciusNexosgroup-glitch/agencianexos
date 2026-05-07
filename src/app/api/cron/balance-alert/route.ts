@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   for (const account of accounts) {
     try {
       const res = await fetch(
-        `https://graph.facebook.com/${version}/${account.ad_account_id}?fields=balance,is_prepay_account&access_token=${token}`,
+        `https://graph.facebook.com/${version}/${account.ad_account_id}?fields=balance,is_prepay_account&access_token=${token}&_=${Date.now()}`,
         { signal: AbortSignal.timeout(10000), cache: 'no-store' }
       )
       const data = await res.json()
