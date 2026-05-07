@@ -41,13 +41,16 @@ export async function GET(req: NextRequest) {
     .gte('metric_date', sevenDaysAgo)
     .lte('metric_date', today)
 
-  const spendByAccount: Record<string, { total: number; days: Set<string> }> = {}
+  const spendByAccount: Record<string, { total: number; days: Set<string>; todaySpend: number }> = {}
   for (const m of metrics || []) {
     if (!spendByAccount[m.ad_account_id]) {
-      spendByAccount[m.ad_account_id] = { total: 0, days: new Set() }
+      spendByAccount[m.ad_account_id] = { total: 0, days: new Set(), todaySpend: 0 }
     }
     spendByAccount[m.ad_account_id].total += Number(m.spend)
     spendByAccount[m.ad_account_id].days.add(m.metric_date)
+    if (m.metric_date === today) {
+      spendByAccount[m.ad_account_id].todaySpend += Number(m.spend)
+    }
   }
 
   const debug = req.nextUrl.searchParams.get('debug') === '1'
@@ -69,6 +72,8 @@ export async function GET(req: NextRequest) {
 
       if (balance < THRESHOLD) {
         const spendData = spendByAccount[account.ad_account_id]
+        // Se o gasto de hoje for maior que o saldo reportado, a API está desatualizada — ignora
+        if (spendData?.todaySpend > balance) continue
         const avgDaily = spendData && spendData.days.size > 0
           ? spendData.total / spendData.days.size
           : 0
