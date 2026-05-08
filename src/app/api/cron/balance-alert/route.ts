@@ -41,15 +41,16 @@ export async function GET(req: NextRequest) {
     .gte('metric_date', sevenDaysAgo)
     .lte('metric_date', today)
 
-  const spendByAccount: Record<string, { total: number; days: Set<string>; todaySpend: number }> = {}
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const spendByAccount: Record<string, { total: number; days: Set<string>; yesterdaySpend: number }> = {}
   for (const m of metrics || []) {
     if (!spendByAccount[m.ad_account_id]) {
-      spendByAccount[m.ad_account_id] = { total: 0, days: new Set(), todaySpend: 0 }
+      spendByAccount[m.ad_account_id] = { total: 0, days: new Set(), yesterdaySpend: 0 }
     }
     spendByAccount[m.ad_account_id].total += Number(m.spend)
     spendByAccount[m.ad_account_id].days.add(m.metric_date)
-    if (m.metric_date === today) {
-      spendByAccount[m.ad_account_id].todaySpend += Number(m.spend)
+    if (m.metric_date === yesterday) {
+      spendByAccount[m.ad_account_id].yesterdaySpend += Number(m.spend)
     }
   }
 
@@ -72,7 +73,9 @@ export async function GET(req: NextRequest) {
 
       if (balance < THRESHOLD) {
         const spendData = spendByAccount[account.ad_account_id]
-        // Busca gasto de hoje direto da Meta Insights para detectar saldo desatualizado
+        // Se gasto de ontem (do nosso DB) > saldo reportado, a API está desatualizada
+        if (spendData?.yesterdaySpend > balance) continue
+        // Também verifica gasto de hoje via Meta Insights
         try {
           const insightsRes = await fetch(
             `https://graph.facebook.com/${version}/${account.ad_account_id}/insights?fields=spend&date_preset=today&access_token=${token}&_=${Date.now()}`,
