@@ -73,17 +73,15 @@ export async function GET(req: NextRequest) {
 
       if (balance < THRESHOLD) {
         const spendData = spendByAccount[account.ad_account_id]
-        // Se gasto de ontem (do nosso DB) > saldo reportado, a API está desatualizada
-        if (spendData?.yesterdaySpend > balance) continue
-        // Também verifica gasto de hoje via Meta Insights
+        // Busca gasto de hoje e ontem direto da Meta Insights (dados do dia)
         try {
           const insightsRes = await fetch(
-            `https://graph.facebook.com/${version}/${account.ad_account_id}/insights?fields=spend&date_preset=today&access_token=${token}&_=${Date.now()}`,
+            `https://graph.facebook.com/${version}/${account.ad_account_id}/insights?fields=spend&time_range={"since":"${yesterday}","until":"${today}"}&access_token=${token}&_=${Date.now()}`,
             { signal: AbortSignal.timeout(8000), cache: 'no-store' }
           )
           const insightsData = await insightsRes.json()
-          const todaySpend = Number(insightsData?.data?.[0]?.spend || 0)
-          if (todaySpend > balance) continue // API desatualizada — conta tem fundos
+          const recentSpend = (insightsData?.data || []).reduce((sum: number, d: any) => sum + Number(d.spend || 0), 0)
+          if (recentSpend > balance) continue // saldo da API desatualizado — conta tem fundos
         } catch { /* ignora erro de insights, continua com alerta */ }
         const avgDaily = spendData && spendData.days.size > 0
           ? spendData.total / spendData.days.size
