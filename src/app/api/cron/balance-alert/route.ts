@@ -31,61 +31,49 @@ export async function GET(req: NextRequest) {
 
   if (!accounts?.length) return NextResponse.json({ ok: true, checked: 0 })
 
-  // Média de gasto diário dos últimos 7 dias por conta
   const today = new Date().toISOString().split('T')[0]
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-  const { data: metrics } = await db
-    .from('campaign_metrics')
-    .select('ad_account_id, spend, metric_date')
-    .gte('metric_date', sevenDaysAgo)
-    .lte('metric_date', today)
-
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const spendByAccount: Record<string, { total: number; days: Set<string>; yesterdaySpend: number }> = {}
-  for (const m of metrics || []) {
-    if (!spendByAccount[m.ad_account_id]) {
-      spendByAccount[m.ad_account_id] = { total: 0, days: new Set(), yesterdaySpend: 0 }
-    }
-    spendByAccount[m.ad_account_id].total += Number(m.spend)
-    spendByAccount[m.ad_account_id].days.add(m.metric_date)
-    if (m.metric_date === yesterday) {
-      spendByAccount[m.ad_account_id].yesterdaySpend += Number(m.spend)
-    }
-  }
+  const ts = Date.now()
 
   const debug = req.nextUrl.searchParams.get('debug') === '1'
   const alerts: { name: string; balance: number; daysLeft: number | null }[] = []
-  const debugRows: { id: string; name: string; is_prepay: any; balance_raw: any }[] = []
+  const debugRows: { id: string; name: string; is_prepay: any; balance_raw: any; recent_spend?: number }[] = []
 
   for (const account of accounts) {
     try {
+      // Busca saldo e tipo de conta direto da Meta API
       const res = await fetch(
-        `https://graph.facebook.com/${version}/${account.ad_account_id}?fields=balance,is_prepay_account&access_token=${token}&_=${Date.now()}`,
+        `https://graph.facebook.com/${version}/${account.ad_account_id}?fields=balance,is_prepay_account&access_token=${token}&_=${ts}`,
         { signal: AbortSignal.timeout(10000), cache: 'no-store' }
       )
       const data = await res.json()
-      if (debug) debugRows.push({ id: account.ad_account_id, name: account.account_name, is_prepay: data.is_prepay_account, balance_raw: data.balance })
       if (data.error || data.balance == null) continue
-      if (!data.is_prepay_account) continue // pula contas pós-pagas
+      if (!data.is_prepay_account) continue
 
       const balance = Number(data.balance) / 100
 
       if (balance < THRESHOLD) {
-        const spendData = spendByAccount[account.ad_account_id]
-        // Busca gasto de hoje e ontem direto da Meta Insights (dados do dia)
+        // Busca gasto dos últimos 7 dias direto da Meta Insights API
+        let avgDaily = 0
+        let recentSpend = 0
         try {
           const insightsRes = await fetch(
-            `https://graph.facebook.com/${version}/${account.ad_account_id}/insights?fields=spend&time_range={"since":"${yesterday}","until":"${today}"}&access_token=${token}&_=${Date.now()}`,
-            { signal: AbortSignal.timeout(8000), cache: 'no-store' }
+            `https://graph.facebook.com/${version}/${account.ad_account_id}/insights?fields=spend&time_range={"since":"${sevenDaysAgo}","until":"${today}"}&time_increment=1&access_token=${token}&_=${ts}`,
+            { signal: AbortSignal.timeout(10000), cache: 'no-store' }
           )
           const insightsData = await insightsRes.json()
-          const recentSpend = (insightsData?.data || []).reduce((sum: number, d: any) => sum + Number(d.spend || 0), 0)
-          if (recentSpend > balance) continue // saldo da API desatualizado — conta tem fundos
-        } catch { /* ignora erro de insights, continua com alerta */ }
-        const avgDaily = spendData && spendData.days.size > 0
-          ? spendData.total / spendData.days.size
-          : 0
+          const rows: any[] = insightsData?.data || []
+          recentSpend = rows.reduce((sum, d) => sum + Number(d.spend || 0), 0)
+          if (rows.length > 0) avgDaily = recentSpend / rows.length
+          // Se gastou mais nos últimos 2 dias do que o saldo reportado → saldo desatualizado
+          const last2 = rows.slice(-2).reduce((sum, d) => sum + Number(d.spend || 0), 0)
+          if (last2 > balance) {
+            if (debug) debugRows.push({ id: account.ad_account_id, name: account.account_name, is_prepay: data.is_prepay_account, balance_raw: data.balance, recent_spend: last2 })
+            continue
+          }
+        } catch { /* sem insights, usa balance mesmo */ }
+
+        if (debug) debugRows.push({ id: account.ad_account_id, name: account.account_name, is_prepay: data.is_prepay_account, balance_raw: data.balance, recent_spend: recentSpend })
         const daysLeft = avgDaily > 0 ? Math.floor(balance / avgDaily) : null
         alerts.push({ name: account.account_name, balance, daysLeft })
       }
