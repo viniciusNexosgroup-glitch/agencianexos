@@ -21,15 +21,20 @@ export async function POST(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  const { data: user, error } = await supabase
+  const { data: rows, error } = await supabase
     .from('clients')
     .select('id, name, email, is_admin, password_hash')
     .eq('email', email)
-    .single()
+    .limit(1)
 
-  if (error || !user) {
-    console.error('DB error:', error?.message, '| user found:', !!user)
-    return NextResponse.json({ error: 'db:' + (error?.message || 'user_not_found') }, { status: 401 })
+  if (error) {
+    console.error('DB error:', error?.message)
+    return NextResponse.json({ error: 'db:' + error?.message }, { status: 401 })
+  }
+
+  const user = rows?.[0]
+  if (!user) {
+    return NextResponse.json({ error: 'db:user_not_found' }, { status: 401 })
   }
 
   if (!user.password_hash) {
