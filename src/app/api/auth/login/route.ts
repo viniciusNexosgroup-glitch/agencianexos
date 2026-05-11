@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 
   const user = rows?.[0]
   if (!user) {
-    return NextResponse.json({ error: 'db:user_not_found' }, { status: 401 })
+    return NextResponse.json({ error: 'db:user_not_found|url:' + process.env.NEXT_PUBLIC_SUPABASE_URL?.slice(8, 20) }, { status: 401 })
   }
 
   if (!user.password_hash) {
