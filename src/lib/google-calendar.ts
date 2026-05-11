@@ -126,6 +126,56 @@ export async function deleteGoogleEvent(userEmail: string, googleEventId: string
   await cal.events.delete({ calendarId: 'primary', eventId: googleEventId }).catch(() => {})
 }
 
+export async function listGoogleCalendars(userEmail: string) {
+  const tokens = await getValidTokens(userEmail)
+  if (!tokens) return []
+
+  const client = createOAuth2Client()
+  client.setCredentials({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+  })
+
+  const cal = google.calendar({ version: 'v3', auth: client })
+  try {
+    const res = await cal.calendarList.list({ minAccessRole: 'reader' })
+    return (res.data.items ?? []).filter(c => c.id)
+  } catch {
+    return []
+  }
+}
+
+export async function listGoogleEvents(
+  userEmail: string,
+  calendarId: string,
+  timeMin?: string,
+  timeMax?: string
+) {
+  const tokens = await getValidTokens(userEmail)
+  if (!tokens) return []
+
+  const client = createOAuth2Client()
+  client.setCredentials({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+  })
+
+  const cal = google.calendar({ version: 'v3', auth: client })
+  try {
+    const res = await cal.events.list({
+      calendarId,
+      timeMin: timeMin ?? new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+      timeMax,
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 500,
+    })
+    return res.data.items ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function updateGoogleEvent(
   userEmail: string,
   googleEventId: string,

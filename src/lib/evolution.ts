@@ -6,10 +6,13 @@ const headers = () => ({
   apikey: API_KEY,
 })
 
+const timeout = (ms = 15000) => AbortSignal.timeout(ms)
+
 export async function createInstance(name: string) {
   const res = await fetch(`${BASE_URL}/instance/create`, {
     method: 'POST',
     headers: headers(),
+    signal: timeout(),
     body: JSON.stringify({
       instanceName: name,
       qrcode: true,
@@ -19,9 +22,31 @@ export async function createInstance(name: string) {
   return res.json()
 }
 
+export async function createCloudApiInstance(
+  name: string,
+  token: string,
+  phoneNumberId: string,
+  wabaId?: string
+) {
+  const body: Record<string, unknown> = {
+    instanceName: name,
+    integration: 'WHATSAPP-BUSINESS',
+    token,
+    phone_number_id: phoneNumberId,
+  }
+  if (wabaId) body.business_id = wabaId
+  const res = await fetch(`${BASE_URL}/instance/create`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}
+
 export async function getInstanceStatus(name: string) {
   const res = await fetch(`${BASE_URL}/instance/connectionState/${name}`, {
     headers: headers(),
+    signal: timeout(8000),
   })
   return res.json()
 }
@@ -29,6 +54,7 @@ export async function getInstanceStatus(name: string) {
 export async function getQRCode(name: string) {
   const res = await fetch(`${BASE_URL}/instance/connect/${name}`, {
     headers: headers(),
+    signal: timeout(10000),
   })
   return res.json()
 }
@@ -77,10 +103,8 @@ export async function sendTextMessage(instanceName: string, to: string, text: st
   const res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({
-      number: to,
-      textMessage: { text },
-    }),
+    signal: timeout(20000),
+    body: JSON.stringify({ number: to, text }),
   })
   return res.json()
 }
@@ -107,14 +131,15 @@ export async function fetchGroupInfo(instanceName: string, groupJid: string): Pr
   }
 }
 
-export async function markChatAsRead(instanceName: string, remoteJid: string, lastMessageId: string, fromMe: boolean) {
+export async function markChatAsRead(
+  instanceName: string,
+  readMessages: { remoteJid: string; fromMe: boolean; id: string }[]
+) {
   try {
     await fetch(`${BASE_URL}/chat/markMessageAsRead/${instanceName}`, {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({
-        readMessages: [{ remoteJid, fromMe, id: lastMessageId }],
-      }),
+      body: JSON.stringify({ readMessages }),
     })
   } catch { /* silencioso */ }
 }
@@ -140,6 +165,104 @@ export async function findMessageById(instanceName: string, remoteJid: string, m
     return Array.isArray(data) ? (data[0] ?? null) : null
   } catch {
     return null
+  }
+}
+
+export async function sendReaction(
+  instanceName: string,
+  key: { remoteJid: string; fromMe: boolean; id: string; participant?: string },
+  emoji: string
+) {
+  const res = await fetch(`${BASE_URL}/message/sendReaction/${instanceName}`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ key, reaction: emoji }),
+  })
+  return res.json()
+}
+
+export async function deleteMessageForEveryone(
+  instanceName: string,
+  remoteJid: string,
+  messageId: string,
+  fromMe: boolean,
+  participant?: string
+) {
+  const body: Record<string, unknown> = { id: messageId, remoteJid, fromMe }
+  if (participant) body.participant = participant
+  const res = await fetch(`${BASE_URL}/chat/deleteMessageForEveryone/${instanceName}`, {
+    method: 'DELETE',
+    headers: headers(),
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}
+
+export async function sendTextWithQuote(
+  instanceName: string,
+  to: string,
+  text: string,
+  quoted: { key: { remoteJid: string; fromMe: boolean; id: string }; message: unknown }
+) {
+  const res = await fetch(`${BASE_URL}/message/sendText/${instanceName}`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ number: to, text, quoted }),
+  })
+  return res.json()
+}
+
+export async function fetchAllGroups(instanceName: string): Promise<{ id: string; subject: string }[]> {
+  try {
+    const res = await fetch(`${BASE_URL}/group/fetchAllGroups/${instanceName}?getParticipants=false`, {
+      headers: headers(),
+      signal: timeout(60000),
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    // Suporta array direto ou objeto com propriedade groups/data
+    const arr: any[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.groups)
+        ? data.groups
+        : Array.isArray(data?.data)
+          ? data.data
+          : []
+    return arr
+      .map((g: any) => ({
+        id: g.id || g.remoteJid || g.groupJid || '',
+        subject: g.subject || g.name || g.groupName || '',
+      }))
+      .filter(g => g.id && g.subject)
+  } catch {
+    return []
+  }
+}
+
+export async function sendDocument(
+  instanceName: string,
+  to: string,
+  base64: string,
+  filename: string,
+  caption = ''
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/message/sendMedia/${instanceName}`, {
+      method: 'POST',
+      headers: headers(),
+      signal: timeout(30000),
+      body: JSON.stringify({
+        number: to,
+        mediatype: 'document',
+        mimetype: 'application/pdf',
+        media: base64,
+        fileName: filename,
+        caption,
+      }),
+    })
+    return res.ok
+  } catch {
+    return false
   }
 }
 

@@ -11,12 +11,14 @@ function supabase() {
   )
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dashboard.viniciusguilherme.shop'
+
 export async function GET(req: NextRequest) {
   const session = await getSession()
-  if (!session) return NextResponse.redirect(new URL('/login', req.url))
+  if (!session) return NextResponse.redirect(`${BASE_URL}/login`)
 
   const code = req.nextUrl.searchParams.get('code')
-  if (!code) return NextResponse.redirect(new URL('/dashboard/calendar?error=no_code', req.url))
+  if (!code) return NextResponse.redirect(`${BASE_URL}/dashboard/calendar?error=no_code`)
 
   try {
     const tokens = await exchangeCode(code)
@@ -36,9 +38,9 @@ export async function GET(req: NextRequest) {
         { onConflict: 'user_email' }
       )
 
-    return NextResponse.redirect(new URL('/dashboard/calendar?connected=1', req.url))
+    return NextResponse.redirect(`${BASE_URL}/dashboard/calendar?connected=1`)
   } catch (err) {
     console.error('Google Calendar callback error:', err)
-    return NextResponse.redirect(new URL('/dashboard/calendar?error=auth_failed', req.url))
+    return NextResponse.redirect(`${BASE_URL}/dashboard/calendar?error=auth_failed`)
   }
 }

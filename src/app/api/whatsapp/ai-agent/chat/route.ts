@@ -60,11 +60,16 @@ export async function POST(req: NextRequest) {
     ...history,
   ]
 
+  const apiKey = agent.api_key || process.env.OPENAI_API_KEY
+  if (!apiKey) {
+    return NextResponse.json({ error: 'Nenhum token de API configurado. Adicione seu token na configuração do Agente IA.' }, { status: 400 })
+  }
+
   const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: agent.model || 'gpt-4o-mini',

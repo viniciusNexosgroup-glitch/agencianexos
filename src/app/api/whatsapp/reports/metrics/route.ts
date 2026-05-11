@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { getUserInstanceNames } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -19,17 +20,22 @@ export async function GET(req: NextRequest) {
   todayStart.setHours(0, 0, 0, 0)
   const since = todayStart.toISOString()
 
+  const names = await getUserInstanceNames(session)
+  if (names !== null && names.length === 0) {
+    return NextResponse.json({ metrics: { total_contacts_today: 0, messages_sent_today: 0, avg_response_time_min: null, avg_csat: null } })
+  }
+
+  let msgsBase = db.from('whatsapp_messages').select('contact_id', { count: 'exact', head: true }).gte('timestamp', since)
+  let msgsSentBase = db.from('whatsapp_messages').select('id', { count: 'exact', head: true }).eq('from_me', true).gte('timestamp', since)
+  if (names !== null) {
+    msgsBase = msgsBase.in('instance_name', names)
+    msgsSentBase = msgsSentBase.in('instance_name', names)
+  }
+
   const [{ count: contactsToday }, { count: msgsSent }, { data: csatData }] = await Promise.all([
-    db.from('whatsapp_messages')
-      .select('contact_id', { count: 'exact', head: true })
-      .gte('timestamp', since),
-    db.from('whatsapp_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('from_me', true)
-      .gte('timestamp', since),
-    db.from('csat_responses')
-      .select('score')
-      .gte('created_at', since),
+    msgsBase,
+    msgsSentBase,
+    db.from('csat_responses').select('score').gte('created_at', since),
   ])
 
   const scores = (csatData ?? []).map(r => r.score).filter(Boolean)

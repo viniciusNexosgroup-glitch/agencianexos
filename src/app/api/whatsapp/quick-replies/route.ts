@@ -14,10 +14,10 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { data, error } = await supabase()
-    .from('quick_replies')
-    .select('id, shortcut, content, type')
-    .order('shortcut')
+  let q = supabase().from('quick_replies').select('id, shortcut, content, type').order('shortcut')
+  if (!session.is_admin) q = q.eq('created_by', session.sub)
+
+  const { data, error } = await q
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase()
     .from('quick_replies')
-    .insert({ shortcut: shortcut.trim(), content: content.trim(), type })
+    .insert({ shortcut: shortcut.trim(), content: content.trim(), type, created_by: session.sub })
     .select('id, shortcut, content, type')
     .single()
 

@@ -16,6 +16,7 @@ type Contact = {
   remote_jid: string | null
   unread_count: number
   profile_pic_url?: string | null
+  follow_up?: boolean
 }
 
 type Tag = {
@@ -95,7 +96,7 @@ function TagBadge({ tag, onRemove }: { tag: Tag; onRemove?: () => void }) {
 
 // ─── TagDropdown (para o header do chat) ──────────────────────────────────────
 
-function TagDropdown({ contactId, onClose }: { contactId: string; onClose: () => void }) {
+function TagDropdown({ contactId, onClose, onTagsChange }: { contactId: string; onClose: () => void; onTagsChange?: (tags: Tag[]) => void }) {
   const [allTags, setAllTags] = useState<Tag[]>([])
   const [contactTags, setContactTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
@@ -127,21 +128,22 @@ function TagDropdown({ contactId, onClose }: { contactId: string; onClose: () =>
 
   async function toggleTag(tag: Tag) {
     const has = contactTags.some(t => t.id === tag.id)
+    let updated: Tag[]
     if (has) {
-      await fetch(`/api/whatsapp/contacts/${contactId}/tags`, {
+      await fetch(`/api/whatsapp/contacts/${contactId}/tags?tag_id=${tag.id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag_id: tag.id }),
       })
-      setContactTags(prev => prev.filter(t => t.id !== tag.id))
+      updated = contactTags.filter(t => t.id !== tag.id)
     } else {
       await fetch(`/api/whatsapp/contacts/${contactId}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tag_id: tag.id }),
       })
-      setContactTags(prev => [...prev, tag])
+      updated = [...contactTags, tag]
     }
+    setContactTags(updated)
+    onTagsChange?.(updated)
   }
 
   return (
@@ -423,47 +425,53 @@ function ChatPanelWithTags({
   onClose,
   funnels,
   onOpenContact,
+  onContactTagsChange,
+  onFollowUpChange,
 }: {
   contact: Contact
   onClose: () => void
   funnels: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
   onOpenContact?: (phone: string, instanceName: string) => void
+  onContactTagsChange?: (contactId: string, tags: Tag[]) => void
+  onFollowUpChange?: (contactId: string, value: boolean) => void
 }) {
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false)
 
-  // Injeta o botão de tag no header via um portal-like approach:
-  // Renderizamos o ChatPanel normalmente e adicionamos o dropdown de tag
-  // sobreposto ao header com posição absoluta.
-  return (
-    <div className="flex flex-col h-full relative">
-      {/* Botão de tag flutuante sobre o header */}
-      <div className="absolute right-4 top-2 z-20 flex items-center">
-        <div className="relative">
-          <button
-            onClick={() => setTagDropdownOpen(p => !p)}
-            title="Gerenciar tags do contato"
-            className="flex items-center justify-center w-8 h-8 rounded-full text-[#8696a0] hover:text-white hover:bg-[#3d4f5a] transition"
-          >
-            {/* Ícone de etiqueta */}
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"
-              />
-            </svg>
-          </button>
-          {tagDropdownOpen && (
-            <TagDropdown
-              contactId={contact.id}
-              onClose={() => setTagDropdownOpen(false)}
-            />
-          )}
-        </div>
-      </div>
-      <ChatPanel contact={contact} onClose={onClose} funnels={funnels} onOpenContact={onOpenContact} />
+  const tagButton = (
+    <div className="relative">
+      <button
+        onClick={() => setTagDropdownOpen(p => !p)}
+        title="Gerenciar tags do contato"
+        className={`p-1.5 rounded-full transition ${tagDropdownOpen ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"
+          />
+        </svg>
+      </button>
+      {tagDropdownOpen && (
+        <TagDropdown
+          contactId={contact.id}
+          onClose={() => setTagDropdownOpen(false)}
+          onTagsChange={tags => onContactTagsChange?.(contact.id, tags)}
+        />
+      )}
     </div>
+  )
+
+  return (
+    <ChatPanel
+      contact={contact}
+      onClose={onClose}
+      funnels={funnels}
+      onOpenContact={onOpenContact}
+      onFollowUpChange={onFollowUpChange}
+      tagButton={tagButton}
+    />
   )
 }
 
@@ -509,15 +517,30 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   }, [])
 
   const chatContactRef = useRef<Contact | null>(null)
+  const allowedInstancesRef = useRef<Set<string>>(new Set())
+  const instancesLoadedRef = useRef(false)
 
   async function fetchContacts() {
-    const { data } = await createBrowserClient()
-      .from('whatsapp_contacts')
-      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url')
-      .not('phone', 'like', '%@lid')
-      .not('phone', 'eq', 'status@broadcast')
-      .order('last_message_at', { ascending: false })
-    return data ?? []
+    const res = await fetch('/api/whatsapp/contacts')
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.contacts ?? []
+  }
+
+  // Carrega TODAS as tags de contatos via rota server-side (service role — sem problema de RLS)
+  async function fetchAllContactTags() {
+    try {
+      const res = await fetch('/api/whatsapp/contact-tags')
+      if (!res.ok) {
+        console.error('[CRM] Erro ao carregar tags de contatos:', res.status)
+        return
+      }
+      const data = await res.json()
+      const map = data.contactTags as Record<string, Tag[]>
+      if (map) setContactTagsMap(prev => ({ ...prev, ...map }))
+    } catch (err) {
+      console.error('[CRM] Erro ao carregar tags de contatos:', err)
+    }
   }
 
   function applyContacts(raw: any[]) {
@@ -563,7 +586,13 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   useEffect(() => {
     load()
     fetchTags()
-    fetch('/api/whatsapp/instance').then(r => r.json()).then(d => setInstances(d.instances ?? d ?? []))
+    fetchAllContactTags()
+    fetch('/api/whatsapp/instance').then(r => r.json()).then(d => {
+      const list = d.instances ?? d ?? []
+      setInstances(list)
+      allowedInstancesRef.current = new Set(list.map((i: any) => i.instance_name as string))
+      instancesLoadedRef.current = true
+    })
     try {
       const saved = JSON.parse(localStorage.getItem('crm_saved_filters') || '[]')
       setSavedFilters(saved)
@@ -577,6 +606,9 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
         // Atualiza apenas o contato que mudou sem rebuscar tudo
         if (payload.new && typeof payload.new === 'object') {
           const updated = payload.new as any
+          // Ignora contatos de instâncias que não pertencem ao usuário
+          const allowed = allowedInstancesRef.current
+          if (!instancesLoadedRef.current || !allowed.has(updated.instance_name)) return
           setContacts(prev => {
             const exists = prev.some(c => c.id === updated.id)
             const currentId = chatContactRef.current?.id
@@ -608,6 +640,9 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
         const msg = payload.new as any
         if (!msg?.contact_id) return
 
+        // Ignora mensagens de contatos que não são desta instância do usuário
+        if (!instancesLoadedRef.current) return
+
         const isOpenChat = msg.contact_id === chatContactRef.current?.id
 
         // Move contato para o topo sempre que chegar mensagem nova (qualquer remetente)
@@ -621,18 +656,23 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
           })
         }
 
-        // Incrementa badge apenas para mensagens recebidas (não enviadas por mim)
+        // Incrementa badge apenas para mensagens recebidas de contatos desta instância
         if (!msg.from_me && !isOpenChat) {
-          setUnreadMap(prev => ({ ...prev, [msg.contact_id]: (prev[msg.contact_id] ?? 0) + 1 }))
+          setContacts(prev => {
+            const belongs = prev.some(c => c.id === msg.contact_id)
+            if (!belongs) return prev
+            setUnreadMap(um => ({ ...um, [msg.contact_id]: (um[msg.contact_id] ?? 0) + 1 }))
+            return prev
+          })
         }
       })
       .subscribe()
 
-    // Loop de polling como fallback (caso Realtime não dispare)
+    // Polling como fallback (Realtime é primário; intervalo longo para economizar egress)
     let active = true
     async function pollLoop() {
       while (active) {
-        await new Promise(r => setTimeout(r, 4000))
+        await new Promise(r => setTimeout(r, 60000))
         if (!active) break
         try {
           const raw = await fetchContacts()
@@ -649,10 +689,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     }
   }, [])
 
-  // Carrega tags dos contatos visíveis quando lista muda
-  useEffect(() => {
-    contacts.forEach(c => fetchContactTags(c.id))
-  }, [contacts])
+  // fetchContactTags mantido para atualização individual após edição no modal
 
   function saveCurrentFilter() {
     if (!filterName.trim()) return
@@ -676,6 +713,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
   }
 
   const filtered = contacts.filter(c => {
+
     const matchSearch =
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.phone.includes(search)
@@ -689,6 +727,23 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     if (filterInstance && c.instance_name !== filterInstance) return false
     return true
   })
+
+  async function markAllRead() {
+    // Zera localmente de imediato
+    setUnreadMap({})
+    setContacts(prev => prev.map(c => ({ ...c, unread_count: 0 })))
+    // Persiste no banco para cada contato com unread > 0
+    const withUnread = contacts.filter(c => c.unread_count > 0 || (unreadMap[c.id] ?? 0) > 0)
+    await Promise.all(
+      withUnread.map(c =>
+        fetch(`/api/whatsapp/contacts/${c.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'mark_read' }),
+        }).catch(() => {})
+      )
+    )
+  }
 
   function handleSelectContact(contact: Contact) {
     chatContactRef.current = contact
@@ -708,15 +763,12 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
     // Busca primeiro nos contatos já carregados
     const existing = contacts.find(c => c.phone === phone && c.instance_name === instanceName)
     if (existing) { handleSelectContact(existing); return }
-    // Se não encontrado, busca no banco
-    const sb = createBrowserClient()
-    const { data } = await sb
-      .from('whatsapp_contacts')
-      .select('id, name, phone, instance_name, last_message_at, last_message_body, remote_jid, unread_count, profile_pic_url')
-      .eq('instance_name', instanceName)
-      .eq('phone', phone)
-      .maybeSingle()
-    if (data) handleSelectContact(data as Contact)
+    // Se não encontrado, busca via API (respeita filtro de instância do usuário)
+    const res = await fetch('/api/whatsapp/contacts')
+    if (!res.ok) return
+    const d = await res.json()
+    const found = (d.contacts ?? []).find((c: Contact) => c.phone === phone && c.instance_name === instanceName)
+    if (found) handleSelectContact(found)
   }
 
   return (
@@ -731,6 +783,16 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               WA
             </div>
             <span className="text-white font-semibold flex-1">Conversas</span>
+            {/* Botão marcar todas como lidas */}
+            <button
+              onClick={markAllRead}
+              title="Marcar todas como lidas"
+              className="text-[#8696a0] hover:text-white transition p-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </button>
             {/* Botão importar CSV */}
             <button
               onClick={() => setShowImport(true)}
@@ -867,7 +929,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
             )}
             {filtered.map(contact => {
               const tags = contactTagsMap[contact.id] ?? []
-              const unread = chatContact?.id === contact.id ? 0 : (unreadMap[contact.id] ?? 0) + Number(contact.unread_count ?? 0)
+              const unread = chatContact?.id === contact.id ? 0 : Math.max(unreadMap[contact.id] ?? 0, Number(contact.unread_count ?? 0))
               return (
                 <button
                   key={contact.id}
@@ -894,7 +956,14 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
                   {/* Info */}
                   <div className="flex-1 min-w-0 text-left">
                     <div className="flex items-center justify-between">
-                      <span className={`text-sm truncate ${unread > 0 ? 'text-white font-semibold' : 'text-white font-medium'}`}>{contact.name}</span>
+                      <div className="flex items-center gap-1 min-w-0">
+                        {contact.follow_up && (
+                          <svg className="w-3 h-3 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
+                          </svg>
+                        )}
+                        <span className={`text-sm truncate ${unread > 0 ? 'text-white font-semibold' : 'text-white font-medium'}`}>{contact.name}</span>
+                      </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
                         {contact.last_message_at && (
                           <span className={`text-xs ${unread > 0 ? 'text-[#00a884]' : 'text-[#8696a0]'}`}>
@@ -938,6 +1007,13 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
               onClose={() => { chatContactRef.current = null; setChatContact(null) }}
               funnels={funnels}
               onOpenContact={handleOpenContact}
+              onContactTagsChange={(contactId, tags) =>
+                setContactTagsMap(prev => ({ ...prev, [contactId]: tags }))
+              }
+              onFollowUpChange={(contactId, value) => {
+                setContacts(prev => prev.map(c => c.id === contactId ? { ...c, follow_up: value } : c))
+                setChatContact(prev => prev && prev.id === contactId ? { ...prev, follow_up: value } : prev)
+              }}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
@@ -963,7 +1039,7 @@ export function ContactsList({ funnels }: { funnels: { id: string; name: string;
       {showTagManager && (
         <TagManagerModal
           onClose={() => setShowTagManager(false)}
-          onTagsChanged={() => { fetchTags(); setContactTagsMap({}) }}
+          onTagsChanged={() => { fetchTags(); fetchAllContactTags() }}
         />
       )}
     </>

@@ -70,7 +70,11 @@ export function FlowBuilder() {
   const [loading, setLoading] = useState(true)
   const [editingFlow, setEditingFlow] = useState<Flow | null>(null)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [toggleError, setToggleError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [showNewForm, setShowNewForm] = useState(false)
   const [newFlowName, setNewFlowName] = useState('')
   const [newFlowInstance, setNewFlowInstance] = useState('')
@@ -136,16 +140,22 @@ export function FlowBuilder() {
 
   async function handleToggle(flow: Flow) {
     setTogglingId(flow.id)
+    setToggleError(null)
     try {
-      const newStatus = flow.status === 'active' ? 'inactive' : 'active'
       const res = await fetch(`/api/whatsapp/flows/${flow.id}`, {
-        method: 'PATCH',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ action: 'toggle' }),
       })
+      const d = await res.json()
       if (res.ok) {
+        const newStatus = d.flow?.is_active ? 'active' : 'inactive'
         setFlows(fs => fs.map(f => f.id === flow.id ? { ...f, status: newStatus } : f))
+      } else {
+        setToggleError(d.error ?? `Erro ao alterar status (${res.status})`)
       }
+    } catch (err: any) {
+      setToggleError(err.message ?? 'Erro de rede ao alterar status')
     } finally {
       setTogglingId(null)
     }
@@ -192,15 +202,41 @@ export function FlowBuilder() {
   async function handleSave() {
     if (!editingFlow) return
     setSaving(true)
+    setSaveError(null)
     try {
-      await fetch(`/api/whatsapp/flows/${editingFlow.id}`, {
+      const res = await fetch(`/api/whatsapp/flows/${editingFlow.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingFlow),
       })
-      setFlows(fs => fs.map(f => f.id === editingFlow.id ? editingFlow : f))
+      const d = await res.json()
+      if (res.ok) {
+        setFlows(fs => fs.map(f => f.id === editingFlow.id ? editingFlow : f))
+        setSuccessMsg('Flow salvo com sucesso!')
+        setTimeout(() => {
+          setSuccessMsg(null)
+          setEditingFlow(null)
+        }, 1500)
+      } else {
+        setSaveError(d.error ?? `Erro ao salvar (${res.status})`)
+      }
+    } catch (err: any) {
+      setSaveError(err.message ?? 'Erro de rede ao salvar')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleDelete(flow: Flow) {
+    if (!confirm(`Excluir o flow "${flow.name}"? Esta ação não pode ser desfeita.`)) return
+    setDeletingId(flow.id)
+    try {
+      const res = await fetch(`/api/whatsapp/flows/${flow.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setFlows(fs => fs.filter(f => f.id !== flow.id))
+      }
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -388,10 +424,25 @@ export function FlowBuilder() {
           </button>
         </div>
 
+        {saveError && (
+          <div className="bg-red-900/40 border border-red-500/50 rounded-lg px-4 py-3 text-red-300 text-sm">
+            <strong>Erro ao salvar:</strong> {saveError}
+            {saveError.includes('steps') && (
+              <p className="mt-1 text-red-400 text-xs">Execute no Supabase SQL Editor: <code className="bg-slate-800 px-1 rounded">ALTER TABLE flows ADD COLUMN IF NOT EXISTS steps JSONB DEFAULT &apos;[]&apos;::jsonb;</code></p>
+            )}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="bg-green-900/40 border border-green-500/50 rounded-lg px-4 py-3 text-green-300 text-sm font-medium">
+            ✓ {successMsg}
+          </div>
+        )}
+
         <div className="flex justify-end">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !!successMsg}
             className="px-6 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
           >
             {saving ? 'Salvando...' : 'Salvar flow'}
@@ -449,6 +500,13 @@ export function FlowBuilder() {
         </div>
       )}
 
+      {toggleError && (
+        <div className="bg-red-900/40 border border-red-500/50 rounded-lg px-4 py-3 text-red-300 text-sm flex items-center justify-between">
+          <span><strong>Erro ao alterar status:</strong> {toggleError}</span>
+          <button onClick={() => setToggleError(null)} className="text-red-400 hover:text-red-200 ml-4 text-xs">✕</button>
+        </div>
+      )}
+
       <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -501,12 +559,21 @@ export function FlowBuilder() {
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => setEditingFlow(flow)}
-                        className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg transition"
-                      >
-                        Editar
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setEditingFlow(flow)}
+                          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg transition"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(flow)}
+                          disabled={deletingId === flow.id}
+                          className="px-3 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 hover:text-red-300 text-xs rounded-lg transition disabled:opacity-50"
+                        >
+                          {deletingId === flow.id ? '...' : 'Excluir'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

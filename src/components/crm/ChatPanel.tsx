@@ -16,6 +16,7 @@ type Message = {
   media_url?: string | null
   media_data?: unknown | null
   reactions?: Record<string, string> | null
+  status?: number | null
 }
 
 type Contact = {
@@ -24,6 +25,7 @@ type Contact = {
   phone: string
   instance_name: string
   remote_jid?: string | null
+  follow_up?: boolean
 }
 
 type Lead = {
@@ -43,6 +45,12 @@ type QuickReply = {
   shortcut: string
   content: string
   type: 'text' | 'audio'
+}
+
+type VideoCategory = {
+  id: string
+  name: string
+  videos: { id: string; name: string; url: string }[]
 }
 
 type ScheduledMessage = {
@@ -81,6 +89,132 @@ function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
+// Status: 0=erro 1=pendente 2=enviado(server) 3=entregue 4=lido 5=reproduzido(áudio)
+function MsgStatus({ status }: { status?: number | null }) {
+  const blue = '#53bdeb'
+  const gray = '#8aaabf'
+
+  // Lido / Reproduzido → duplo check azul
+  if (status === 4 || status === 5) {
+    return (
+      <svg className="inline-block ml-1 flex-shrink-0" width="18" height="12" viewBox="0 0 18 12" fill={blue}>
+        <path d="M17.394 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z"/>
+        <path d="M12.334 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z" opacity=".5"/>
+      </svg>
+    )
+  }
+
+  // Entregue → duplo check cinza
+  if (status === 3) {
+    return (
+      <svg className="inline-block ml-1 flex-shrink-0" width="18" height="12" viewBox="0 0 18 12" fill={gray}>
+        <path d="M17.394 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z"/>
+        <path d="M12.334 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z" opacity=".5"/>
+      </svg>
+    )
+  }
+
+  // Enviado ao servidor → check simples cinza
+  if (status === 2) {
+    return (
+      <svg className="inline-block ml-1 flex-shrink-0" width="12" height="12" viewBox="0 0 12 12" fill={gray}>
+        <path d="M11.394 1.556a.75.75 0 0 0-1.06-1.06l-6.07 6.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l6.601-6.6z"/>
+      </svg>
+    )
+  }
+
+  // Pendente → relógio
+  if (status === 1) {
+    return (
+      <svg className="inline-block ml-1 flex-shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={gray} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    )
+  }
+
+  // Padrão (status null/0/desconhecido após envio nosso) → duplo check cinza
+  return (
+    <svg className="inline-block ml-1 flex-shrink-0" width="18" height="12" viewBox="0 0 18 12" fill={gray}>
+      <path d="M17.394 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z"/>
+      <path d="M12.334 1.556a.75.75 0 0 0-1.06-1.06l-7.07 7.07-1.415-1.414a.75.75 0 0 0-1.06 1.06l1.944 1.944a.75.75 0 0 0 1.06 0l7.601-7.6z" opacity=".5"/>
+    </svg>
+  )
+}
+
+function parseVCard(vcard: string): { name: string; phone: string; org: string } {
+  const lines = vcard.split(/\r?\n/)
+  let name = '', phone = '', org = ''
+  for (const line of lines) {
+    if (line.startsWith('FN:')) name = line.slice(3).trim()
+    else if (line.startsWith('ORG:')) org = line.slice(4).replace(/;/g, ' ').trim()
+    else if (line.startsWith('TEL')) {
+      const waid = line.match(/waid=(\d+)/)
+      if (waid) phone = waid[1]
+      else {
+        const colon = line.lastIndexOf(':')
+        if (colon !== -1) phone = line.slice(colon + 1).replace(/[^\d+]/g, '')
+      }
+    }
+  }
+  return { name, phone, org }
+}
+
+function ContactCard({
+  displayName,
+  vcard,
+  fromMe,
+  instanceName,
+  onConverse,
+}: {
+  displayName: string
+  vcard: string
+  fromMe: boolean
+  instanceName: string
+  onConverse?: (phone: string, instance: string) => void
+}) {
+  const [showDetails, setShowDetails] = useState(false)
+  const parsed = parseVCard(vcard)
+  const name = parsed.name || displayName || 'Contato'
+  const initials = name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+  const bg = AVATAR_COLORS[Math.abs(name.split('').reduce((h: number, c: string) => c.charCodeAt(0) + ((h << 5) - h), 0)) % AVATAR_COLORS.length]
+
+  return (
+    <div className={`rounded-xl overflow-hidden min-w-[220px] max-w-[260px] ${fromMe ? 'bg-[#1f5c37]' : 'bg-[#202c33]'}`}>
+      <div className="flex items-center gap-3 px-3 py-3">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0 ${bg}`}>
+          {initials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-medium truncate">{name}</p>
+          {parsed.org && <p className="text-[#8696a0] text-xs truncate">{parsed.org}</p>}
+          {parsed.phone && <p className="text-[#8696a0] text-xs">{parsed.phone}</p>}
+        </div>
+      </div>
+      <div className={`border-t ${fromMe ? 'border-[#1a7a42]' : 'border-[#2a3942]'} flex`}>
+        <button
+          onClick={() => parsed.phone && onConverse?.(parsed.phone, instanceName)}
+          disabled={!parsed.phone}
+          className={`flex-1 text-center py-2 text-xs font-medium transition ${parsed.phone ? 'text-[#00a884] hover:bg-[#ffffff10]' : 'text-[#8696a0]'}`}
+        >
+          Conversar
+        </button>
+        <div className={`w-px ${fromMe ? 'bg-[#1a7a42]' : 'bg-[#2a3942]'}`} />
+        <button
+          onClick={() => setShowDetails(v => !v)}
+          className="flex-1 text-center py-2 text-[#00a884] text-xs font-medium hover:bg-[#ffffff10] transition"
+        >
+          {showDetails ? 'Ocultar' : 'Ver detalhes'}
+        </button>
+      </div>
+      {showDetails && (
+        <div className={`px-3 py-2 border-t ${fromMe ? 'border-[#1a7a42]' : 'border-[#2a3942]'}`}>
+          <pre className="text-[10px] text-[#8696a0] whitespace-pre-wrap break-all leading-4">{vcard}</pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function groupMessagesByDate(messages: Message[]) {
   const groups: { date: string; messages: Message[] }[] = []
   for (const msg of messages) {
@@ -95,17 +229,134 @@ function groupMessagesByDate(messages: Message[]) {
   return groups
 }
 
-function highlightText(text: string, query: string) {
-  if (!query.trim()) return <>{text}</>
-  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+const URL_REGEX = /(https?:\/\/[^\s]+)/gi
+
+function renderMessageText(text: string, query: string) {
+  const segments = text.split(URL_REGEX)
   return (
     <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase()
-          ? <mark key={i} className="bg-yellow-400 text-black rounded-sm px-0.5">{part}</mark>
-          : part
-      )}
+      {segments.map((seg, i) => {
+        if (URL_REGEX.test(seg)) {
+          URL_REGEX.lastIndex = 0
+          return (
+            <a
+              key={i}
+              href={seg}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline text-[#53bdeb] hover:text-[#7dcef5] break-all"
+              onClick={e => e.stopPropagation()}
+            >
+              {seg}
+            </a>
+          )
+        }
+        if (!query.trim()) return <span key={i}>{seg}</span>
+        const parts = seg.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+        return (
+          <span key={i}>
+            {parts.map((part, j) =>
+              part.toLowerCase() === query.toLowerCase()
+                ? <mark key={j} className="bg-yellow-400 text-black rounded-sm px-0.5">{part}</mark>
+                : part
+            )}
+          </span>
+        )
+      })}
     </>
+  )
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function DocumentCard({
+  fileName,
+  mimetype,
+  fileLength,
+  messageId,
+  instance,
+  fromMe,
+}: {
+  fileName: string
+  mimetype: string
+  fileLength?: number | null
+  messageId?: string | null
+  instance: string
+  fromMe: boolean
+}) {
+  const [loading, setLoading] = useState(false)
+
+  const ext = (() => {
+    const fromName = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() : null
+    const fromMime = mimetype.includes('/') ? mimetype.split('/')[1]?.split(';')[0].toUpperCase() : null
+    return (fromName || fromMime || 'DOC').slice(0, 5)
+  })()
+
+  async function download(open: boolean) {
+    if (!messageId) return
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ instance, message_id: messageId })
+      const res = await fetch(`/api/whatsapp/media-document?${params}`)
+      if (!res.ok) { alert('Não foi possível baixar o arquivo'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      if (open) {
+        window.open(url, '_blank')
+      } else {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        a.click()
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    } catch {
+      alert('Erro ao baixar o arquivo')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const borderColor = fromMe ? 'border-[#0a7060]' : 'border-[#2a3942]'
+  const headerBg    = fromMe ? 'bg-[#024737]'    : 'bg-[#182229]'
+
+  return (
+    <div className={`rounded-xl overflow-hidden border ${borderColor} mb-1`} style={{ minWidth: 230, maxWidth: 280 }}>
+      <div className={`flex items-center gap-3 p-3 ${headerBg}`}>
+        <div className="w-11 h-11 rounded-lg bg-[#00a884] flex items-center justify-center flex-shrink-0">
+          <span className="text-white text-[9px] font-bold leading-none text-center px-1">{ext}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-medium leading-tight" style={{ wordBreak: 'break-word' }}>{fileName}</p>
+          <p className="text-[#8696a0] text-xs mt-0.5">
+            {ext}{fileLength ? ` • ${formatFileSize(fileLength)}` : ''}
+          </p>
+        </div>
+      </div>
+      {messageId && (
+        <div className={`flex border-t ${borderColor}`}>
+          <button
+            onClick={() => download(true)}
+            disabled={loading}
+            className="flex-1 py-2.5 text-sm text-[#00a884] hover:bg-white/5 transition font-medium disabled:opacity-50"
+          >
+            {loading ? '...' : 'Abrir'}
+          </button>
+          <div className={`w-px ${borderColor.replace('border-', 'bg-')}`} />
+          <button
+            onClick={() => download(false)}
+            disabled={loading}
+            className="flex-1 py-2.5 text-sm text-[#00a884] hover:bg-white/5 transition font-medium disabled:opacity-50"
+          >
+            Salvar como...
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -123,6 +374,10 @@ function VideoPlayer({
   const [error, setError] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    return () => { if (videoSrc) URL.revokeObjectURL(videoSrc) }
+  }, [videoSrc])
 
   async function openModal() {
     setModalOpen(true)
@@ -160,24 +415,39 @@ function VideoPlayer({
     <>
       {/* Thumbnail no chat */}
       <div
-        className="relative rounded-lg overflow-hidden cursor-pointer mb-1 group"
-        style={{ width: 220, height: 160 }}
+        className="relative rounded-xl overflow-hidden cursor-pointer mb-1 group"
+        style={{ width: 240, height: 180 }}
         onClick={openModal}
       >
-        <img src={thumbnail} alt="Vídeo" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/55 transition-colors flex items-center justify-center">
-          <div className="w-14 h-14 rounded-full bg-black/60 flex items-center justify-center shadow-lg">
-            <svg className="w-7 h-7 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+        {/* Fundo escuro sempre presente (fallback visível quando thumbnail falha) */}
+        <div className="absolute inset-0 bg-[#111c22] flex items-center justify-center">
+          <svg className="w-12 h-12 text-[#2a3942]" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/>
+          </svg>
+        </div>
+        {/* Thumbnail sobre o fundo */}
+        {thumbnail && (
+          <img
+            src={thumbnail}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
+        )}
+        {/* Overlay escuro + botão play */}
+        <div className="absolute inset-0 bg-black/30 group-hover:bg-black/45 transition-colors flex items-center justify-center">
+          <div className="w-16 h-16 rounded-full bg-black/55 border border-white/20 flex items-center justify-center shadow-xl backdrop-blur-sm group-hover:scale-105 transition-transform">
+            <svg className="w-8 h-8 text-white drop-shadow-lg" style={{ marginLeft: 3 }} fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z"/>
             </svg>
           </div>
         </div>
-        {/* Indicador de vídeo */}
-        <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 rounded px-1.5 py-0.5">
+        {/* Badge câmera (canto inferior esquerdo) */}
+        <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/60 rounded-full px-2 py-0.5 backdrop-blur-sm">
           <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
             <path d="M17 10.5V7a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h12a1 1 0 001-1v-3.5l4 4v-11l-4 4z"/>
           </svg>
-          <span className="text-white text-[10px]">Vídeo</span>
+          <span className="text-white text-[10px] font-medium">Vídeo</span>
         </div>
       </div>
 
@@ -259,6 +529,8 @@ function VideoPlayer({
   )
 }
 
+let currentlyPlayingAudio: HTMLAudioElement | null = null
+
 function AudioPlayer({ src, fromMe }: { src: string; fromMe: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -277,8 +549,14 @@ function AudioPlayer({ src, fromMe }: { src: string; fromMe: boolean }) {
   function togglePlay() {
     const audio = audioRef.current
     if (!audio) return
-    if (playing) audio.pause()
-    else audio.play()
+    if (playing) {
+      audio.pause()
+    } else {
+      if (currentlyPlayingAudio && currentlyPlayingAudio !== audio) {
+        currentlyPlayingAudio.pause()
+      }
+      audio.play()
+    }
   }
 
   function formatDur(s: number) {
@@ -296,7 +574,7 @@ function AudioPlayer({ src, fromMe }: { src: string; fromMe: boolean }) {
       <audio
         ref={audioRef}
         src={src}
-        onPlay={() => setPlaying(true)}
+        onPlay={() => { setPlaying(true); currentlyPlayingAudio = audioRef.current }}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setCurrentTime(0) }}
         onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime ?? 0)}
@@ -350,20 +628,30 @@ export function ChatPanel({
   onClose,
   funnels,
   onOpenContact,
+  onFollowUpChange,
+  tagButton,
 }: {
   contact: Contact
   onClose: () => void
   funnels?: { id: string; name: string; crm_stages: { id: string; name: string }[] }[]
   onOpenContact?: (phone: string, instanceName: string) => void
+  onFollowUpChange?: (contactId: string, value: boolean) => void
+  tagButton?: React.ReactNode
 }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [followUp, setFollowUp] = useState(!!contact.follow_up)
+  const [togglingFollowUp, setTogglingFollowUp] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
+  const latestTimestampRef = useRef<string | null>(null)
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Quick Replies
@@ -418,14 +706,26 @@ export function ChatPanel({
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Perfil do participante (grupos)
+  type ProfileLead = { id: string; title: string; value: number | null; notes: string | null; contact_id: string }
   type ParticipantProfile = {
     name: string
     phone: string
     jid: string
     loading: boolean
     contact: { id: string; name: string; phone: string; instance_name: string; profile_pic_url?: string | null; remote_jid?: string | null } | null
+    lead: ProfileLead | null
+    leadLoading: boolean
   }
   const [profilePanel, setProfilePanel] = useState<ParticipantProfile | null>(null)
+  const [profileLeadTitle, setProfileLeadTitle] = useState('')
+  const [profileLeadValue, setProfileLeadValue] = useState('0')
+  const [profileLeadNotes, setProfileLeadNotes] = useState('')
+  const [savingProfileLead, setSavingProfileLead] = useState(false)
+  const [markingWonProfile, setMarkingWonProfile] = useState(false)
+  const [wonSuccessProfile, setWonSuccessProfile] = useState(false)
+  const [profileSaleValue, setProfileSaleValue] = useState('0')
+  const [markingDirectSale, setMarkingDirectSale] = useState(false)
+  const [directSaleSuccess, setDirectSaleSuccess] = useState(false)
 
   // Mensagens interativas
   const [showInteractive, setShowInteractive] = useState(false)
@@ -437,6 +737,13 @@ export function ChatPanel({
   const [iListBtn, setIListBtn] = useState('')
   const [iSections, setISections] = useState<InteractiveSection[]>([{ title: '', rows: [{ id: '1', title: '' }] }])
   const [sendingInteractive, setSendingInteractive] = useState(false)
+
+  // Biblioteca de vídeos (sidebar)
+  const [libSidebar, setLibSidebar] = useState(false)
+  const [libCategories, setLibCategories] = useState<VideoCategory[]>([])
+  const [libSearch, setLibSearch] = useState('')
+  const [libExpanded, setLibExpanded] = useState<Set<string>>(new Set())
+  const [sendingVideo, setSendingVideo] = useState<string | null>(null)
 
   // Gerenciador de respostas rápidas
   const [showQRManager, setShowQRManager] = useState(false)
@@ -451,6 +758,49 @@ export function ChatPanel({
   const qrMediaRecorderRef = useRef<MediaRecorder | null>(null)
   const qrAudioChunksRef = useRef<Blob[]>([])
   const qrTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Ações de mensagem (reply, forward, react, delete)
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
+  const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
+  const [reactionMsgId, setReactionMsgId] = useState<string | null>(null)
+  const [forwardMsg, setForwardMsg] = useState<Message | null>(null)
+  const [forwardSearch, setForwardSearch] = useState('')
+  const [forwardContacts, setForwardContacts] = useState<{ id: string; name: string; phone: string; instance_name: string; remote_jid?: string | null }[]>([])
+  const [forwardingTo, setForwardingTo] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Message | null>(null)
+  const [deletingMsg, setDeletingMsg] = useState(false)
+  const [forwardSuccess, setForwardSuccess] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Fecha painel de perfil ao trocar de conversa
+  useEffect(() => {
+    setProfilePanel(null)
+    setReplyingTo(null)
+    setFollowUp(!!contact.follow_up)
+  }, [contact.id])
+
+  async function toggleFollowUp() {
+    if (togglingFollowUp) return
+    setTogglingFollowUp(true)
+    const newVal = !followUp
+    setFollowUp(newVal)
+    try {
+      const res = await fetch(`/api/whatsapp/contacts/${contact.id}/follow-up`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ follow_up: newVal }),
+      })
+      if (!res.ok) {
+        setFollowUp(!newVal)
+      } else {
+        onFollowUpChange?.(contact.id, newVal)
+      }
+    } catch {
+      setFollowUp(!newVal)
+    } finally {
+      setTogglingFollowUp(false)
+    }
+  }
 
   useEffect(() => {
     setMessages([])
@@ -474,6 +824,16 @@ export function ChatPanel({
           setMessages(prev => {
             const msg = payload.new as Message
             if (prev.some(m => m.id === msg.id)) return prev
+            // Substitui mensagem otimista (sem message_id real) pelo registro real do banco
+            // Evita duplicata sem precisar de setTimeout(load)
+            if (msg.from_me) {
+              const optimIdx = prev.findIndex(m =>
+                m.from_me && m.message_type === msg.message_type && !m.message_id
+              )
+              if (optimIdx >= 0) {
+                return prev.map((m, i) => i === optimIdx ? { ...m, id: msg.id, message_id: msg.message_id, status: msg.status } : m)
+              }
+            }
             return [...prev, msg]
           })
         }
@@ -488,28 +848,48 @@ export function ChatPanel({
           const updated = payload.new as Message
           setMessages(prev => prev.map(m =>
             m.id === updated.id
-              ? { ...m, reactions: updated.reactions, media_url: updated.media_url }
+              ? { ...m, reactions: updated.reactions, media_url: updated.media_url, message_type: updated.message_type, body: updated.body ?? m.body, media_data: updated.media_data ?? m.media_data, status: updated.status ?? m.status }
               : m
           ))
         }
       })
       .subscribe()
 
-    // Loop de polling como fallback
+    // Polling incremental como fallback (Realtime é primário; intervalo longo para economizar egress)
+    // Não inclui media_data — carregado pelo load() inicial e por realtime UPDATE
+    const POLL_SELECT = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, reactions, status'
     let active = true
     async function pollLoop() {
       while (active) {
-        await new Promise(r => setTimeout(r, 4000))
+        await new Promise(r => setTimeout(r, 30000))
         if (!active) break
         try {
           const sb2 = createBrowserClient()
-          const { data } = await sb2
+          const after = latestTimestampRef.current
+          // Só busca mensagens mais novas que a última conhecida (0 rows em estado estável)
+          const q = sb2
             .from('whatsapp_messages')
-            .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions')
+            .select(POLL_SELECT)
             .eq('contact_id', contact.id)
             .order('timestamp', { ascending: true })
-            .limit(100)
-          if (data) setMessages(data as Message[])
+            .limit(20)
+          const { data } = after
+            ? await q.gt('timestamp', after)
+            : await q.order('timestamp', { ascending: false }).limit(50)
+          if (data && data.length > 0) {
+            const newMsgs = after ? data as Message[] : (data as Message[]).reverse()
+            if (newMsgs.length > 0) {
+              latestTimestampRef.current = newMsgs[newMsgs.length - 1].timestamp
+            }
+            setMessages(prev => {
+              const existingIds = new Set(prev.map(m => m.id))
+              const newOnes = newMsgs.filter(m => !existingIds.has(m.id))
+              if (newOnes.length === 0) return prev
+              return [...prev, ...newOnes].sort((a, b) =>
+                new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              )
+            })
+          }
         } catch { /* silencioso */ }
       }
     }
@@ -573,22 +953,81 @@ export function ChatPanel({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showEmoji])
 
+  // Fechar menu de mensagem ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuMsgId(null)
+        setReactionMsgId(null)
+      }
+    }
+    if (menuMsgId || reactionMsgId) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [menuMsgId, reactionMsgId])
+
   async function load() {
+    const supabase = createBrowserClient()
+    const BASE_SELECT = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions'
     try {
-      const supabase = createBrowserClient()
       const { data, error } = await supabase
         .from('whatsapp_messages')
-        .select('id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions')
+        .select(`${BASE_SELECT}, status`)
         .eq('contact_id', contact.id)
-        .order('timestamp', { ascending: true })
-        .limit(100)
-      if (error) throw error
-      isAtBottomRef.current = true
-      setMessages(data ?? [])
+        .order('timestamp', { ascending: false })
+        .limit(50)
+      if (error) {
+        // Fallback: coluna status pode não existir ainda (rodar: ALTER TABLE whatsapp_messages ADD COLUMN IF NOT EXISTS status INTEGER)
+        const { data: data2, error: error2 } = await supabase
+          .from('whatsapp_messages')
+          .select(BASE_SELECT)
+          .eq('contact_id', contact.id)
+          .order('timestamp', { ascending: false })
+          .limit(50)
+        if (error2) throw error2
+        isAtBottomRef.current = true
+        const msgs = (data2 ?? []).reverse()
+        setMessages(msgs)
+        latestTimestampRef.current = msgs[msgs.length - 1]?.timestamp ?? null
+        setHasMore((data2?.length ?? 0) === 50)
+      } else {
+        isAtBottomRef.current = true
+        const msgs = (data ?? []).reverse()
+        setMessages(msgs)
+        latestTimestampRef.current = msgs[msgs.length - 1]?.timestamp ?? null
+        setHasMore((data?.length ?? 0) === 50)
+      }
       setLoading(false)
     } catch (err) {
       console.error('[CRM] Erro ao carregar mensagens:', err)
       setLoading(false)
+    }
+  }
+
+  async function loadMore() {
+    const oldest = messages[0]
+    if (!oldest || loadingMore || !hasMore) return
+    setLoadingMore(true)
+    const supabase = createBrowserClient()
+    const BASE_SELECT = 'id, message_id, from_me, body, timestamp, message_type, participant_name, participant_jid, is_internal, media_url, media_data, reactions'
+    try {
+      const { data } = await supabase
+        .from('whatsapp_messages')
+        .select(`${BASE_SELECT}, status`)
+        .eq('contact_id', contact.id)
+        .lt('timestamp', oldest.timestamp)
+        .order('timestamp', { ascending: false })
+        .limit(50)
+      const older = (data ?? []).reverse()
+      // Preserva posição de scroll: calcula altura antes e restaura depois
+      const el = scrollContainerRef.current
+      const prevScrollBottom = el ? el.scrollHeight - el.scrollTop : 0
+      setMessages(prev => [...older, ...prev])
+      setHasMore((data?.length ?? 0) === 50)
+      if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight - prevScrollBottom })
+    } catch (err) {
+      console.error('[CRM] Erro ao carregar mensagens anteriores:', err)
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -617,6 +1056,136 @@ export function ChatPanel({
     const res = await fetch('/api/whatsapp/agents')
     const data = await res.json()
     setAgents(data.agents ?? [])
+  }
+
+  async function loadForwardContacts() {
+    try {
+      const res = await fetch('/api/whatsapp/contacts?limit=100')
+      const d = await res.json()
+      setForwardContacts(d.contacts ?? [])
+    } catch { setForwardContacts([]) }
+  }
+
+  async function handleReact(msg: Message, emoji: string) {
+    setReactionMsgId(null)
+    setMenuMsgId(null)
+    if (!msg.message_id) return
+    const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
+    // Optimistic: atualiza reactions localmente
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msg.id) return m
+      const reactions = { ...(m.reactions || {}), me: emoji }
+      return { ...m, reactions }
+    }))
+    await fetch('/api/whatsapp/react', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instance_name: contact.instance_name,
+        remote_jid: remoteJid,
+        message_id: msg.message_id,
+        from_me: msg.from_me,
+        participant_jid: msg.participant_jid || null,
+        emoji,
+      }),
+    })
+  }
+
+  async function handleDeleteForMe(msg: Message) {
+    setDeletingMsg(true)
+    setDeleteTarget(null)
+    setMessages(prev => prev.filter(m => m.id !== msg.id))
+    const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
+    await fetch('/api/whatsapp/delete-message', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: msg.id,
+        message_id: msg.message_id,
+        instance_name: contact.instance_name,
+        remote_jid: remoteJid,
+        from_me: msg.from_me,
+        // Apagar para mim: se a mensagem foi enviada por mim, remove do WhatsApp também
+        for_everyone: msg.from_me && !!msg.message_id,
+      }),
+    })
+    setDeletingMsg(false)
+  }
+
+  async function handleDeleteForAll(msg: Message) {
+    setDeletingMsg(true)
+    setDeleteTarget(null)
+    // Marca como apagada no estado (igual WhatsApp — mensagem permanece visível como "Mensagem apagada")
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, message_type: 'revoked', body: '', media_url: null, media_data: null } : m
+    ))
+    const remoteJid = contact.remote_jid || `${contact.phone}@s.whatsapp.net`
+    await fetch('/api/whatsapp/delete-message', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: msg.id,
+        message_id: msg.message_id,
+        instance_name: contact.instance_name,
+        remote_jid: remoteJid,
+        from_me: msg.from_me,
+        for_everyone: true,
+      }),
+    })
+    setDeletingMsg(false)
+  }
+
+  async function handleForward(targetContact: { id: string; name: string; phone: string; instance_name: string; remote_jid?: string | null }) {
+    if (!forwardMsg || forwardingTo) return
+    setForwardingTo(targetContact.id)
+    const to = targetContact.remote_jid || targetContact.phone
+    try {
+      const isMidia = ['imageMessage','audioMessage','videoMessage','stickerMessage','ptvMessage'].includes(forwardMsg.message_type)
+
+      if (isMidia && forwardMsg.media_url?.startsWith('data:')) {
+        // Encaminhar mídia com base64 via Evolution API
+        const mime = forwardMsg.media_url.split(';')[0].replace('data:', '')
+        const base64 = forwardMsg.media_url.split(',')[1]
+        const mediaType = forwardMsg.message_type === 'audioMessage' || forwardMsg.message_type === 'ptvMessage'
+          ? 'audio' : forwardMsg.message_type === 'imageMessage' ? 'image' : 'video'
+        await fetch(`/api/whatsapp/send-media`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instanceName: targetContact.instance_name,
+            contactId: targetContact.id,
+            phone: to,
+            mediatype: mediaType,
+            mimetype: mime,
+            media: base64,
+            caption: forwardMsg.body || '',
+          }),
+        })
+      } else {
+        // Texto puro ou mídia sem base64 armazenado
+        const text = forwardMsg.body || (isMidia ? '[Mídia encaminhada]' : '')
+        await fetch('/api/whatsapp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instanceName: targetContact.instance_name,
+            contactId: targetContact.id,
+            phone: to,
+            text,
+          }),
+        })
+      }
+
+      setForwardMsg(null)
+      setForwardSearch('')
+      setForwardSuccess(`Mensagem encaminhada para ${targetContact.name || targetContact.phone}`)
+      setTimeout(() => setForwardSuccess(null), 3000)
+    } catch {
+      setForwardSuccess('Erro ao encaminhar mensagem')
+      setTimeout(() => setForwardSuccess(null), 3000)
+    } finally {
+      setForwardingTo(null)
+    }
   }
 
   async function transfer() {
@@ -712,6 +1281,13 @@ export function ChatPanel({
     }
   }
 
+  useEffect(() => {
+    fetch('/api/whatsapp/video-library')
+      .then(r => r.json())
+      .then(d => setLibCategories(d.categories ?? []))
+      .catch(() => {})
+  }, [])
+
   async function loadScheduled() {
     setLoadingScheduled(true)
     try {
@@ -763,9 +1339,11 @@ export function ChatPanel({
   async function send() {
     if (!text.trim() || sending) return
     const body = text.trim()
+    const quotedMsg = replyingTo
     setSending(true)
     setError(null)
     setText('')
+    setReplyingTo(null)
     isAtBottomRef.current = true
 
     const optimistic: Message = {
@@ -775,20 +1353,29 @@ export function ChatPanel({
       timestamp: new Date().toISOString(),
       message_type: 'text',
       is_internal: isInternal,
+      media_data: quotedMsg ? { _reply: { id: quotedMsg.message_id, body: quotedMsg.body, sender_name: quotedMsg.from_me ? 'Você' : (contact.name || contact.phone), from_me: quotedMsg.from_me } } : undefined,
     }
     setMessages(prev => [...prev, optimistic])
 
     try {
+      const remoteJid = contact.remote_jid || contact.phone
+      const payload: Record<string, unknown> = {
+        instanceName: contact.instance_name,
+        contactId: contact.id,
+        phone: remoteJid,
+        text: body,
+        is_internal: isInternal,
+      }
+      if (quotedMsg?.message_id) {
+        payload.quoted = {
+          key: { remoteJid, fromMe: quotedMsg.from_me, id: quotedMsg.message_id },
+          message: { conversation: quotedMsg.body || '' },
+        }
+      }
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instanceName: contact.instance_name,
-          contactId: contact.id,
-          phone: contact.remote_jid || contact.phone,
-          text: body,
-          is_internal: isInternal,
-        }),
+        body: JSON.stringify(payload),
       })
       const result = await res.json()
       if (result.error) {
@@ -796,7 +1383,12 @@ export function ChatPanel({
         setMessages(prev => prev.filter(m => m.id !== optimistic.id))
         setText(body)
       } else {
-        setTimeout(load, 1500)
+        // Substitui a mensagem otimista pelo ID real do banco para evitar duplicata via realtime
+        if (result.id) {
+          setMessages(prev => prev.map(m =>
+            m.id === optimistic.id ? { ...m, id: result.id, message_id: result.message_id ?? m.message_id } : m
+          ))
+        }
       }
     } catch {
       setError('Erro de conexão. Tente novamente.')
@@ -911,10 +1503,8 @@ export function ChatPanel({
             if (data.error) {
               setError('Erro ao enviar áudio: ' + data.error)
               setMessages(prev => prev.filter(m => m.id !== optimistic.id))
-            } else {
-              // Recarrega após 3s para substituir otimista pelo registro real do DB
-              setTimeout(load, 3000)
             }
+            // realtime INSERT irá substituir o otimista quando o webhook salvar no banco
           } catch {
             setError('Erro de conexão ao enviar áudio.')
             setMessages(prev => prev.filter(m => m.id !== optimistic.id))
@@ -953,18 +1543,41 @@ export function ChatPanel({
 
   async function openParticipantProfile(name: string, jid: string) {
     const phone = jid.replace('@s.whatsapp.net', '').replace('@lid', '')
-    setProfilePanel({ name, phone, jid, contact: null, loading: true })
+    setProfilePanel({ name, phone, jid, contact: null, lead: null, loading: true, leadLoading: true })
+    setProfileLeadTitle('')
+    setProfileLeadValue('0')
+    setProfileLeadNotes('')
+    setProfileSaleValue('0')
+    setDirectSaleSuccess(false)
     try {
       const sb = createBrowserClient()
-      const { data } = await sb
+      const { data: contactData } = await sb
         .from('whatsapp_contacts')
         .select('id, name, phone, instance_name, profile_pic_url, remote_jid')
         .eq('instance_name', contact.instance_name)
         .eq('phone', phone)
         .maybeSingle()
-      setProfilePanel(prev => prev ? { ...prev, contact: data ?? null, loading: false } : null)
+      setProfilePanel(prev => prev ? { ...prev, contact: contactData ?? null, loading: false } : null)
+
+      if (contactData?.id) {
+        const { data: leadData } = await sb
+          .from('crm_leads')
+          .select('id, title, value, notes, contact_id')
+          .eq('contact_id', contactData.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        setProfilePanel(prev => prev ? { ...prev, lead: leadData ?? null, leadLoading: false } : null)
+        if (leadData) {
+          setProfileLeadTitle(leadData.title ?? '')
+          setProfileLeadValue(String(leadData.value ?? 0))
+          setProfileLeadNotes(leadData.notes ?? '')
+        }
+      } else {
+        setProfilePanel(prev => prev ? { ...prev, leadLoading: false } : null)
+      }
     } catch {
-      setProfilePanel(prev => prev ? { ...prev, loading: false } : null)
+      setProfilePanel(prev => prev ? { ...prev, loading: false, leadLoading: false } : null)
     }
   }
 
@@ -991,9 +1604,8 @@ export function ChatPanel({
         if (data.error) {
           setError('Erro ao enviar áudio: ' + data.error)
           setMessages(prev => prev.filter(m => m.id !== optimistic.id))
-        } else {
-          setTimeout(load, 3000)
         }
+        // realtime INSERT irá substituir o otimista quando o webhook salvar no banco
       } catch {
         setError('Erro de conexão ao enviar áudio.')
         setMessages(prev => prev.filter(m => m.id !== optimistic.id))
@@ -1019,8 +1631,10 @@ export function ChatPanel({
         if (result.error) {
           setError(result.error)
           setMessages(prev => prev.filter(m => m.id !== optimistic.id))
-        } else {
-          setTimeout(load, 1500)
+        } else if (result.id) {
+          setMessages(prev => prev.map(m =>
+            m.id === optimistic.id ? { ...m, id: result.id, message_id: result.message_id ?? m.message_id } : m
+          ))
         }
       } catch {
         setError('Erro de conexão.')
@@ -1193,6 +1807,50 @@ export function ChatPanel({
               <p className="text-[#e9edef] text-sm">+{profilePanel.phone}</p>
             </div>
 
+            {/* Orçamento + Registrar venda */}
+            {!profilePanel.loading && profilePanel.contact && (
+              <div className="px-6 py-5 border-b border-[#2a3942] space-y-3">
+                <p className="text-[#8696a0] text-xs font-medium uppercase tracking-wide">Orçamento / Venda</p>
+                <div>
+                  <label className="text-[#8696a0] text-xs mb-1 block">Valor (R$)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={profileSaleValue}
+                    onChange={e => setProfileSaleValue(e.target.value)}
+                    className="w-full bg-[#202c33] text-white text-sm rounded-lg px-3 py-2 outline-none border border-[#2a3942] focus:border-[#00a884] transition"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    if (markingDirectSale) return
+                    setMarkingDirectSale(true)
+                    await fetch('/api/whatsapp/conversions', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        contact_id: profilePanel.contact!.id,
+                        event_name: 'Purchase',
+                        value: Number(profileSaleValue) || 0,
+                        currency: 'BRL',
+                      }),
+                    })
+                    setMarkingDirectSale(false)
+                    setDirectSaleSuccess(true)
+                    setTimeout(() => setDirectSaleSuccess(false), 2500)
+                  }}
+                  disabled={markingDirectSale}
+                  className={`w-full py-2.5 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                    directSaleSuccess
+                      ? 'bg-green-600 text-white'
+                      : 'bg-green-900/30 hover:bg-green-900/60 text-green-400 border border-green-800'
+                  }`}
+                >
+                  {directSaleSuccess ? '✓ Venda registrada!' : markingDirectSale ? 'Registrando...' : '$ Registrar como venda (Meta Conversions)'}
+                </button>
+              </div>
+            )}
+
             {profilePanel.loading && (
               <div className="flex justify-center py-6">
                 <p className="text-[#8696a0] text-xs">Buscando informações...</p>
@@ -1201,6 +1859,127 @@ export function ChatPanel({
             {!profilePanel.loading && !profilePanel.contact && (
               <div className="px-6 py-5">
                 <p className="text-[#8696a0] text-xs italic">Contato não encontrado no CRM</p>
+              </div>
+            )}
+
+            {/* ── Lead ── */}
+            {!profilePanel.loading && profilePanel.contact && (
+              <div className="px-6 py-5 border-t border-[#2a3942]">
+                <p className="text-[#8696a0] text-xs mb-3 font-medium uppercase tracking-wide">Lead</p>
+                {profilePanel.leadLoading ? (
+                  <p className="text-[#8696a0] text-xs">Carregando lead...</p>
+                ) : profilePanel.lead ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[#8696a0] text-xs mb-1 block">Nome do lead</label>
+                      <input
+                        value={profileLeadTitle}
+                        onChange={e => setProfileLeadTitle(e.target.value)}
+                        className="w-full bg-[#202c33] text-white text-sm rounded-lg px-3 py-2 outline-none border border-[#2a3942] focus:border-[#00a884] transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[#8696a0] text-xs mb-1 block">Valor (R$)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={profileLeadValue}
+                        onChange={e => setProfileLeadValue(e.target.value)}
+                        className="w-full bg-[#202c33] text-white text-sm rounded-lg px-3 py-2 outline-none border border-[#2a3942] focus:border-[#00a884] transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[#8696a0] text-xs mb-1 block">Observações</label>
+                      <textarea
+                        rows={3}
+                        value={profileLeadNotes}
+                        onChange={e => setProfileLeadNotes(e.target.value)}
+                        className="w-full bg-[#202c33] text-white text-sm rounded-lg px-3 py-2 outline-none border border-[#2a3942] focus:border-[#00a884] transition resize-none"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          setSavingProfileLead(true)
+                          await fetch('/api/whatsapp/leads', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: profilePanel.lead!.id, title: profileLeadTitle, value: Number(profileLeadValue) || 0, notes: profileLeadNotes }),
+                          })
+                          setSavingProfileLead(false)
+                          setProfilePanel(prev => prev ? { ...prev, lead: { ...prev.lead!, title: profileLeadTitle, value: Number(profileLeadValue) || 0, notes: profileLeadNotes } } : null)
+                        }}
+                        disabled={savingProfileLead}
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-medium py-2 rounded-lg transition"
+                      >
+                        {savingProfileLead ? 'Salvando...' : 'Salvar'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm('Excluir este lead?')) return
+                          await fetch(`/api/whatsapp/leads?id=${profilePanel.lead!.id}`, { method: 'DELETE' })
+                          setProfilePanel(prev => prev ? { ...prev, lead: null } : null)
+                        }}
+                        className="px-4 py-2 text-sm text-red-400 hover:text-red-300 border border-red-900 rounded-lg transition"
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (markingWonProfile) return
+                        setMarkingWonProfile(true)
+                        await fetch('/api/whatsapp/conversions', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            contact_id: profilePanel.lead!.contact_id,
+                            lead_id: profilePanel.lead!.id,
+                            event_name: 'Purchase',
+                            value: Number(profileLeadValue) || 0,
+                            currency: 'BRL',
+                          }),
+                        })
+                        setMarkingWonProfile(false)
+                        setWonSuccessProfile(true)
+                        setTimeout(() => setWonSuccessProfile(false), 2000)
+                      }}
+                      disabled={markingWonProfile}
+                      className={`w-full py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                        wonSuccessProfile
+                          ? 'bg-green-600 text-white'
+                          : 'bg-green-900/30 hover:bg-green-900/60 text-green-400 border border-green-800'
+                      }`}
+                    >
+                      {wonSuccessProfile ? '✓ Venda registrada!' : markingWonProfile ? 'Registrando...' : '$ Registrar como venda (Meta Conversions)'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-[#8696a0] text-xs italic">Nenhum lead vinculado a este contato</p>
+                    <button
+                      onClick={async () => {
+                        const contactId = profilePanel.contact!.id
+                        const res = await fetch('/api/whatsapp/leads', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ contact_id: contactId, title: profilePanel.contact!.name || profilePanel.phone }),
+                        })
+                        if (res.ok) {
+                          const d = await res.json()
+                          const newLead = d.lead ?? d
+                          setProfilePanel(prev => prev ? { ...prev, lead: newLead } : null)
+                          setProfileLeadTitle(newLead.title ?? '')
+                          setProfileLeadValue(String(newLead.value ?? 0))
+                          setProfileLeadNotes(newLead.notes ?? '')
+                        }
+                      }}
+                      className="w-full py-2 text-sm font-medium rounded-lg border border-[#2a3942] text-[#00a884] hover:bg-[#202c33] transition"
+                    >
+                      + Criar lead para este contato
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1374,6 +2153,102 @@ export function ChatPanel({
         </div>
       )}
 
+      {/* ── Toast de sucesso ── */}
+      {forwardSuccess && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#005c4b] text-white text-sm px-5 py-2.5 rounded-full shadow-2xl flex items-center gap-2 animate-fade-in">
+          <svg className="w-4 h-4 text-[#00a884]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
+          {forwardSuccess}
+        </div>
+      )}
+
+      {/* ── Modal: Encaminhar mensagem ── */}
+      {forwardMsg && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={() => { setForwardMsg(null); setForwardSearch('') }}>
+          <div className="bg-[#202c33] rounded-2xl w-80 max-h-[70vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-[#2a3942]">
+              <button onClick={() => { setForwardMsg(null); setForwardSearch('') }} className="text-[#8696a0] hover:text-white transition">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
+              </button>
+              <div className="flex-1">
+                <p className="text-white text-sm font-medium">Encaminhar mensagem</p>
+                <p className="text-[#8696a0] text-xs truncate">{forwardMsg.body || '[mídia]'}</p>
+              </div>
+            </div>
+            <div className="px-3 py-2 border-b border-[#2a3942]">
+              <input
+                value={forwardSearch}
+                onChange={e => { setForwardSearch(e.target.value); if (forwardContacts.length === 0) loadForwardContacts() }}
+                onFocus={() => { if (forwardContacts.length === 0) loadForwardContacts() }}
+                placeholder="Buscar contato..."
+                className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded-lg px-3 py-2 outline-none placeholder-[#8696a0]"
+                autoFocus
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {forwardContacts
+                .filter(c => !forwardSearch || c.name?.toLowerCase().includes(forwardSearch.toLowerCase()) || c.phone.includes(forwardSearch))
+                .slice(0, 30)
+                .map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => handleForward(c)}
+                    disabled={!!forwardingTo}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#2a3942] transition text-left"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-teal-600 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                      {(c.name || c.phone).slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#e9edef] text-sm truncate">{c.name || c.phone}</p>
+                      <p className="text-[#8696a0] text-xs">{c.instance_name}</p>
+                    </div>
+                    {forwardingTo === c.id && <span className="text-[#00a884] text-xs">Enviando...</span>}
+                  </button>
+                ))}
+              {forwardContacts.length === 0 && (
+                <p className="text-[#8696a0] text-xs text-center py-6">Carregando contatos...</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Confirmar exclusão ── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center" onClick={() => setDeleteTarget(null)}>
+          <div className="bg-[#202c33] rounded-2xl p-5 shadow-2xl w-72" onClick={e => e.stopPropagation()}>
+            <p className="text-white font-medium mb-1">Apagar mensagem?</p>
+            <p className="text-[#8696a0] text-sm mb-4 leading-relaxed">
+              {deleteTarget.body ? `"${deleteTarget.body.slice(0, 60)}${deleteTarget.body.length > 60 ? '...' : ''}"` : '[mídia]'}
+            </p>
+            <div className="flex flex-col gap-2">
+              {deleteTarget.from_me && (
+                <button
+                  onClick={() => handleDeleteForAll(deleteTarget)}
+                  disabled={deletingMsg}
+                  className="w-full py-2.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition"
+                >
+                  Apagar para todos
+                </button>
+              )}
+              <button
+                onClick={() => handleDeleteForMe(deleteTarget)}
+                disabled={deletingMsg}
+                className="w-full py-2.5 bg-[#2a3942] hover:bg-[#3d4a54] disabled:opacity-40 text-[#e9edef] text-sm font-medium rounded-xl transition"
+              >
+                Apagar para mim
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="w-full py-2 text-[#8696a0] text-sm hover:text-white transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Lightbox ── */}
       {lightboxSrc && (
         <div
@@ -1397,6 +2272,8 @@ export function ChatPanel({
         </div>
       )}
 
+      <div className="flex flex-1 overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-2 bg-[#202c33] flex-shrink-0">
         <button
@@ -1407,41 +2284,50 @@ export function ChatPanel({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        {(contact as any).profile_pic_url
-          ? <img src={(contact as any).profile_pic_url} alt={contact.name} className="w-10 h-10 rounded-full flex-shrink-0 object-cover" onError={e => { const el = e.target as HTMLImageElement; el.style.display='none'; (el.nextElementSibling as HTMLElement)?.style.removeProperty('display') }} />
-          : null
-        }
-        <div className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-white font-semibold text-sm ${avatarColor(contact.name)}`} style={(contact as any).profile_pic_url ? { display: 'none' } : {}}>
-          {isGroup
-            ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
-            : getInitials(contact.name)
-          }
-        </div>
-        <div className="flex-1 min-w-0">
-          {showSearch ? (
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Buscar nas mensagens..."
-              className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded px-3 py-1 outline-none placeholder-[#8696a0]"
-              onKeyDown={e => {
-                if (e.key === 'Escape') {
-                  setShowSearch(false)
-                  setSearchQuery('')
-                }
-              }}
-            />
-          ) : (
-            <>
-              <p className="text-white font-medium text-sm truncate">{contact.name}</p>
-              <p className="text-[#8696a0] text-xs truncate">
-                {isGroup ? 'Grupo' : contact.phone}
-              </p>
-            </>
+        <button
+          className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition"
+          onClick={() => openParticipantProfile(
+            contact.name || contact.phone,
+            contact.remote_jid || `${contact.phone}@s.whatsapp.net`
           )}
-        </div>
+        >
+          {(contact as any).profile_pic_url
+            ? <img src={(contact as any).profile_pic_url} alt={contact.name} className="w-10 h-10 rounded-full flex-shrink-0 object-cover" onError={e => { const el = e.target as HTMLImageElement; el.style.display='none'; (el.nextElementSibling as HTMLElement)?.style.removeProperty('display') }} />
+            : null
+          }
+          <div className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-white font-semibold text-sm ${avatarColor(contact.name)}`} style={(contact as any).profile_pic_url ? { display: 'none' } : {}}>
+            {isGroup
+              ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+              : getInitials(contact.name)
+            }
+          </div>
+          <div className="flex-1 min-w-0">
+            {showSearch ? (
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Buscar nas mensagens..."
+                className="w-full bg-[#2a3942] text-[#e9edef] text-sm rounded px-3 py-1 outline-none placeholder-[#8696a0]"
+                onClick={e => e.stopPropagation()}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') {
+                    setShowSearch(false)
+                    setSearchQuery('')
+                  }
+                }}
+              />
+            ) : (
+              <>
+                <p className="text-white font-medium text-sm truncate">{contact.name}</p>
+                <p className="text-[#8696a0] text-xs truncate">
+                  {isGroup ? 'Grupo' : contact.phone}
+                </p>
+              </>
+            )}
+          </div>
+        </button>
         {/* Seletor de etapa do funil */}
         {funnels && funnels.length > 0 && (
           <div className="relative" ref={stageDropdownRef}>
@@ -1526,6 +2412,32 @@ export function ChatPanel({
           </svg>
         </button>
 
+        {/* Botão follow-up */}
+        <button
+          onClick={toggleFollowUp}
+          disabled={togglingFollowUp}
+          title={followUp ? 'Remover follow-up' : 'Marcar para follow-up'}
+          className={`p-1.5 rounded-full transition ${followUp ? 'text-amber-400' : 'text-[#8696a0] hover:text-white'}`}
+        >
+          <svg className="w-5 h-5" fill={followUp ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={followUp ? 0 : 1.8} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+          </svg>
+        </button>
+
+        {/* Botão biblioteca de vídeos */}
+        <button
+          onClick={() => setLibSidebar(v => !v)}
+          title="Biblioteca de Vídeos"
+          className={`p-1.5 rounded-full transition ${libSidebar ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'}`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+        </button>
+
+        {/* Botão de tags (injetado pelo ChatPanelWithTags) */}
+        {tagButton}
+
         {/* Botão de busca */}
         <button
           onClick={() => {
@@ -1565,7 +2477,9 @@ export function ChatPanel({
         onScroll={() => {
           const el = scrollContainerRef.current
           if (!el) return
-          isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+          isAtBottomRef.current = atBottom
+          setShowScrollBtn(!atBottom)
         }}
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23182229' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
@@ -1574,6 +2488,19 @@ export function ChatPanel({
       >
         {loading && (
           <p className="text-[#8696a0] text-sm text-center py-4">Carregando mensagens...</p>
+        )}
+        {!loading && hasMore && (
+          <div className="flex justify-center my-3">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="bg-[#182229] text-[#8696a0] hover:text-white text-xs px-4 py-2 rounded-lg transition disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {loadingMore ? (
+                <><span className="inline-block w-3 h-3 border border-[#8696a0] border-t-transparent rounded-full animate-spin"/>Carregando...</>
+              ) : '↑ Carregar mensagens anteriores'}
+            </button>
+          </div>
         )}
         {!loading && messages.length === 0 && (
           <div className="flex justify-center my-4">
@@ -1598,14 +2525,96 @@ export function ChatPanel({
               </span>
             </div>
             {group.messages.map((msg, idx) => {
-              const senderName = msg.participant_name || ''
-              const showSender = isGroup && !msg.from_me && senderName &&
-                (idx === 0 || group.messages[idx - 1].participant_jid !== msg.participant_jid || group.messages[idx - 1].from_me)
+              const senderName = isGroup
+                ? (msg.participant_name || '')
+                : (!msg.from_me ? (contact.name || contact.phone) : '')
+              const showSender = !msg.from_me && senderName && (
+                isGroup
+                  ? (idx === 0 || group.messages[idx - 1].participant_jid !== msg.participant_jid || group.messages[idx - 1].from_me)
+                  : (idx === 0 || group.messages[idx - 1].from_me)
+              )
               const color = senderName ? senderColor(senderName) : '#8696a0'
               const isIntMsg = msg.is_internal
 
+              const QUICK_EMOJIS = ['👍','❤️','😂','😮','😢','🙏']
+              const replyData = (msg.media_data as Record<string, unknown> | null)?._reply as { body?: string; sender_name?: string | null; from_me?: boolean } | undefined
+              const isMenuOpen = menuMsgId === msg.id
+              const isReactOpen = reactionMsgId === msg.id
+
               return (
-                <div key={msg.id} className={`flex mb-1 ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
+                <div key={msg.id} className={`relative flex mb-1 group/msg ${msg.from_me ? 'justify-end' : 'justify-start'}`}>
+
+                  {/* Botões de ação — ficam visíveis no hover OU quando menu/reação estão abertos */}
+                  <div
+                    className={`flex items-center gap-0.5 transition-opacity duration-150 flex-shrink-0 self-end mb-1 ${msg.from_me ? 'order-first mr-1' : 'order-last ml-1'} ${isMenuOpen || isReactOpen ? 'opacity-100' : 'opacity-0 group-hover/msg:opacity-100'}`}
+                  >
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={() => { setReactionMsgId(id => id === msg.id ? null : msg.id); setMenuMsgId(null) }}
+                      className="w-7 h-7 rounded-full bg-[#233138] hover:bg-[#2a3942] flex items-center justify-center text-[#8696a0] hover:text-white transition shadow"
+                      title="Reagir"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                      </svg>
+                    </button>
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={() => { setMenuMsgId(id => id === msg.id ? null : msg.id); setReactionMsgId(null) }}
+                      className="w-7 h-7 rounded-full bg-[#233138] hover:bg-[#2a3942] flex items-center justify-center text-[#8696a0] hover:text-white transition shadow"
+                      title="Mais opções"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M7 10l5 5 5-5z"/>
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Picker de reações — fora do container de opacidade, não some ao mover o mouse */}
+                  {isReactOpen && (
+                    <div
+                      ref={menuRef}
+                      className={`absolute bottom-10 z-30 flex items-center gap-1 bg-[#233138] border border-[#2a3942] rounded-full px-3 py-2 shadow-2xl ${msg.from_me ? 'right-16' : 'left-16'}`}
+                    >
+                      {QUICK_EMOJIS.map(e => (
+                        <button key={e} onClick={() => handleReact(msg, e)} className="text-xl hover:scale-125 transition-transform leading-none">
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Menu dropdown — fora do container de opacidade */}
+                  {isMenuOpen && (
+                    <div
+                      ref={menuRef}
+                      className={`absolute bottom-10 z-30 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl py-1 min-w-[165px] ${msg.from_me ? 'right-16' : 'left-16'}`}
+                    >
+                      <button
+                        onClick={() => { setReplyingTo(msg); setMenuMsgId(null); setTimeout(() => inputRef.current?.focus(), 50) }}
+                        className="w-full text-left px-4 py-2.5 text-[#e9edef] text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                        Responder
+                      </button>
+                      <button
+                        onClick={() => { setForwardMsg(msg); setMenuMsgId(null); loadForwardContacts() }}
+                        className="w-full text-left px-4 py-2.5 text-[#e9edef] text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3-3 3m-9 0v-3a6 6 0 016-6h9"/></svg>
+                        Encaminhar
+                      </button>
+                      <div className="h-px bg-[#2a3942] mx-2 my-1"/>
+                      <button
+                        onClick={() => { setDeleteTarget(msg); setMenuMsgId(null) }}
+                        className="w-full text-left px-4 py-2.5 text-red-400 text-sm hover:bg-[#2a3942] transition flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        Apagar
+                      </button>
+                    </div>
+                  )}
+
                   <div
                     className={`max-w-[65%] px-3 py-2 rounded-lg shadow-sm relative ${
                       isIntMsg
@@ -1616,16 +2625,48 @@ export function ChatPanel({
                     }`}
                     style={isIntMsg ? { backgroundColor: '#2d3748', color: '#e9edef' } : undefined}
                   >
+                    {/* Mensagem apagada para todos */}
+                    {msg.message_type === 'revoked' ? (
+                      <p className="text-sm italic text-[#8696a0] flex items-center gap-1.5">
+                        <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                        Mensagem apagada
+                        <span className={`ml-1 text-[10px] not-italic ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>{formatTime(msg.timestamp)}</span>
+                      </p>
+                    ) : (<>
+
                     {/* Badge nota interna */}
                     {isIntMsg && (
                       <span className="inline-block text-yellow-400 text-[10px] font-semibold uppercase tracking-wide mb-1 border border-yellow-700 rounded px-1">
                         Interno
                       </span>
                     )}
+
+                    {/* Quoted message (reply) */}
+                    {replyData && (
+                      <div className={`flex gap-1.5 mb-2 rounded-lg overflow-hidden cursor-default ${msg.from_me ? 'bg-[#004034]' : 'bg-[#1a2530]'}`}>
+                        <div className="w-1 bg-[#00a884] flex-shrink-0 rounded-l-lg" />
+                        <div className="flex-1 px-2 py-1.5 min-w-0">
+                          <p className="text-[#00a884] text-[11px] font-medium mb-0.5">
+                            {replyData.from_me ? 'Você' : (replyData.sender_name || contact.name || contact.phone)}
+                          </p>
+                          <p className="text-[#8696a0] text-xs truncate">{replyData.body || '[mídia]'}</p>
+                        </div>
+                      </div>
+                    )}
+
                     {showSender && (
                       <button
                         type="button"
-                        onClick={() => openParticipantProfile(senderName, msg.participant_jid || '')}
+                        onClick={() => {
+                          if (isGroup) {
+                            openParticipantProfile(senderName, msg.participant_jid || '')
+                          } else {
+                            openParticipantProfile(
+                              contact.name || contact.phone,
+                              contact.remote_jid || `${contact.phone}@s.whatsapp.net`
+                            )
+                          }
+                        }}
                         className="text-xs font-semibold mb-1 hover:underline text-left block"
                         style={{ color }}
                       >
@@ -1654,12 +2695,19 @@ export function ChatPanel({
                     {/* Vídeo */}
                     {msg.message_type === 'videoMessage' && (
                       msg.media_url?.startsWith('data:video/') ? (
+                        // Base64 do vídeo completo
                         <video controls className="rounded-lg max-w-[260px] max-h-[220px] mb-1" style={{ background: '#000' }}>
                           <source src={msg.media_url} />
                         </video>
-                      ) : msg.media_url?.startsWith('data:image/') && msg.message_id ? (
+                      ) : msg.media_url?.startsWith('http') ? (
+                        // URL direta (enviado via biblioteca ou link externo)
+                        <video controls className="rounded-lg max-w-[260px] max-h-[220px] mb-1" style={{ background: '#000' }}>
+                          <source src={msg.media_url} />
+                        </video>
+                      ) : msg.message_id ? (
+                        // Recebido: VideoPlayer com thumbnail (se disponível) + download sob demanda
                         <VideoPlayer
-                          thumbnail={msg.media_url}
+                          thumbnail={msg.media_url?.startsWith('data:image/') ? msg.media_url : ''}
                           messageId={msg.message_id}
                           instance={contact.instance_name}
                         />
@@ -1669,9 +2717,96 @@ export function ChatPanel({
                     )}
 
                     {/* Documento */}
-                    {msg.message_type === 'documentMessage' && (
-                      <span className="italic text-[#8696a0] text-xs">📄 Documento</span>
-                    )}
+                    {msg.message_type === 'documentMessage' && (() => {
+                      const d = msg.media_data as { fileName?: string; mimetype?: string; fileLength?: number } | null
+                      if (!d?.fileName) return <span className="italic text-[#8696a0] text-xs">📄 Documento</span>
+                      return (
+                        <DocumentCard
+                          fileName={d.fileName}
+                          mimetype={d.mimetype || 'application/octet-stream'}
+                          fileLength={d.fileLength}
+                          messageId={msg.message_id}
+                          instance={contact.instance_name}
+                          fromMe={msg.from_me}
+                        />
+                      )
+                    })()}
+
+                    {/* Contato compartilhado */}
+                    {(msg.message_type === 'contactMessage' || msg.message_type === 'contactsArrayMessage') && (() => {
+                      const d = msg.media_data as Record<string, unknown> | null
+                      if (!d) return <span className="italic text-[#8696a0] text-xs">👤 Contato</span>
+                      if (msg.message_type === 'contactMessage') {
+                        return (
+                          <ContactCard
+                            displayName={(d.displayName as string) || ''}
+                            vcard={(d.vcard as string) || ''}
+                            fromMe={msg.from_me}
+                            instanceName={contact.instance_name}
+                            onConverse={onOpenContact}
+                          />
+                        )
+                      }
+                      const contacts = (d.contacts as Array<{ displayName: string; vcard: string }>) ?? []
+                      return (
+                        <div className="flex flex-col gap-2">
+                          {contacts.map((c, i) => (
+                            <ContactCard
+                              key={i}
+                              displayName={c.displayName}
+                              vcard={c.vcard}
+                              fromMe={msg.from_me}
+                              instanceName={contact.instance_name}
+                              onConverse={onOpenContact}
+                            />
+                          ))}
+                        </div>
+                      )
+                    })()}
+
+                    {/* Enquete */}
+                    {msg.message_type === 'pollCreationMessage' && (() => {
+                      type PollOption = { name: string; votes: number }
+                      const d = msg.media_data as { name: string; options: PollOption[]; selectableCount: number } | null
+                      if (!d?.options) return <span className="italic text-[#8696a0] text-xs flex items-center gap-1">📊 Enquete</span>
+                      const totalVotes = d.options.reduce((s, o) => s + (o.votes || 0), 0)
+                      return (
+                        <div style={{ minWidth: 200, maxWidth: 280 }}>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <svg className="w-3.5 h-3.5 flex-shrink-0" style={{ color: msg.from_me ? '#e9edef' : '#00a884' }} viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4zm2.5 2.1h-15V5h15v14.1zm0-16.1h-15C3.6 3 3 3.6 3 4.5v15C3 20.4 3.6 21 4.5 21h15c.9 0 1.5-.6 1.5-1.5v-15C21 3.6 20.4 3 19.5 3z"/>
+                            </svg>
+                            <span className="text-[11px] font-medium opacity-70">ENQUETE</span>
+                          </div>
+                          <p className="text-sm font-medium leading-snug mb-3">{d.name || msg.body}</p>
+                          <div className="space-y-2">
+                            {d.options.map((opt, i) => {
+                              const pct = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0
+                              return (
+                                <div key={i}>
+                                  <div className="flex items-center justify-between text-xs mb-1">
+                                    <span className="text-[#e9edef] leading-tight">{opt.name}</span>
+                                    {totalVotes > 0 && <span className="text-[#8696a0] ml-2 flex-shrink-0">{pct}%</span>}
+                                  </div>
+                                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.12)' }}>
+                                    <div
+                                      className="h-full rounded-full transition-all"
+                                      style={{ width: `${pct}%`, background: msg.from_me ? '#e9edef' : '#00a884' }}
+                                    />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          {totalVotes > 0 && (
+                            <p className="text-[10px] mt-2 opacity-50">{totalVotes} voto{totalVotes !== 1 ? 's' : ''}</p>
+                          )}
+                          {totalVotes === 0 && (
+                            <p className="text-[10px] mt-2 opacity-40">Selecione uma ou mais opções</p>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* Texto (incluindo legenda de imagem/vídeo) */}
                     {msg.message_type !== 'imageMessage' &&
@@ -1679,17 +2814,20 @@ export function ChatPanel({
                      msg.message_type !== 'audioMessage' &&
                      msg.message_type !== 'ptvMessage' &&
                      msg.message_type !== 'videoMessage' &&
-                     msg.message_type !== 'documentMessage' && (
+                     msg.message_type !== 'documentMessage' &&
+                     msg.message_type !== 'contactMessage' &&
+                     msg.message_type !== 'contactsArrayMessage' &&
+                     msg.message_type !== 'pollCreationMessage' && (
                       <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                         {msg.body
-                          ? (searchQuery ? highlightText(msg.body, searchQuery) : msg.body)
+                          ? renderMessageText(msg.body, searchQuery)
                           : <span className="italic text-[#8696a0] text-xs">[mídia]</span>}
                       </p>
                     )}
 
                     {/* Legenda de imagem/vídeo */}
                     {(msg.message_type === 'imageMessage' || msg.message_type === 'videoMessage') && msg.body && (
-                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed mt-1">{msg.body}</p>
+                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed mt-1">{renderMessageText(msg.body, searchQuery)}</p>
                     )}
 
                     {/* Reações */}
@@ -1712,10 +2850,11 @@ export function ChatPanel({
                       </div>
                     )}
 
-                    <p className={`text-[10px] mt-1 text-right ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>
+                    <p className={`text-[10px] mt-1 text-right flex items-center justify-end gap-0.5 ${msg.from_me ? 'text-[#8aaabf]' : 'text-[#8696a0]'}`}>
                       {formatTime(msg.timestamp)}
-                      {msg.from_me && !isIntMsg && <span className="ml-1">✓✓</span>}
+                      {msg.from_me && !isIntMsg && <MsgStatus status={msg.status} />}
                     </p>
+                    </>)}
                   </div>
                 </div>
               )
@@ -1724,6 +2863,21 @@ export function ChatPanel({
         ))}
         <div ref={bottomRef} />
       </div>
+
+      {/* Botão scroll para o final (estilo WhatsApp) */}
+      {showScrollBtn && (
+        <button
+          onClick={() => {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+          }}
+          className="absolute bottom-24 right-5 z-10 w-10 h-10 rounded-full bg-[#202c33] border border-[#2a3942] shadow-lg flex items-center justify-center hover:bg-[#2a3942] transition-colors"
+          title="Ir para o final"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#8696a0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      )}
 
       {/* Error */}
       {error && (
@@ -1985,6 +3139,22 @@ export function ChatPanel({
           </div>
         )}
 
+        {/* Preview de resposta ativa */}
+        {replyingTo && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-[#1f2c34] border-t border-[#2a3942] flex-shrink-0">
+            <div className="w-0.5 self-stretch bg-[#00a884] rounded-full flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[#00a884] text-xs font-medium">{replyingTo.from_me ? 'Você' : (contact.name || contact.phone)}</p>
+              <p className="text-[#8696a0] text-xs truncate">{replyingTo.body || '[mídia]'}</p>
+            </div>
+            <button onClick={() => setReplyingTo(null)} className="text-[#8696a0] hover:text-white transition flex-shrink-0 p-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
         {/* Gravando áudio */}
         {recording ? (
           <div className="flex items-center gap-3 px-4 py-3 bg-[#202c33]">
@@ -2105,6 +3275,100 @@ export function ChatPanel({
             )}
           </div>
         )}
+      </div>
+      </div>
+
+      {libSidebar && (
+      <div className="w-72 flex-shrink-0 border-l border-[#222e35] bg-[#111b21] flex flex-col overflow-hidden">
+        {/* Cabeçalho */}
+        <div className="flex items-center justify-between px-4 py-3 bg-[#202c33] flex-shrink-0 border-b border-[#222e35]">
+          <span className="text-white font-medium text-sm">Biblioteca de Vídeos</span>
+          <button onClick={() => setLibSidebar(false)} className="text-[#8696a0] hover:text-white transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {/* Busca */}
+        <div className="px-3 py-2 flex-shrink-0 border-b border-[#222e35]">
+          <div className="flex items-center bg-[#202c33] rounded-lg px-2 gap-2">
+            <svg className="w-3.5 h-3.5 text-[#8696a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              value={libSearch}
+              onChange={e => setLibSearch(e.target.value)}
+              placeholder="Buscar categoria ou vídeo..."
+              className="flex-1 bg-transparent text-white text-xs py-1.5 outline-none placeholder-[#8696a0]"
+            />
+          </div>
+        </div>
+        {/* Lista de categorias */}
+        <div className="flex-1 overflow-y-auto">
+          {libCategories.length === 0 && (
+            <p className="text-[#8696a0] text-xs text-center py-6 italic px-4">
+              Nenhuma categoria criada. Vá em CRM → Biblioteca para adicionar.
+            </p>
+          )}
+          {libCategories
+            .filter(cat => !libSearch || cat.name.toLowerCase().includes(libSearch.toLowerCase()) || cat.videos.some(v => v.name.toLowerCase().includes(libSearch.toLowerCase())))
+            .map(cat => (
+              <div key={cat.id}>
+                <button
+                  onClick={() => setLibExpanded(prev => {
+                    const next = new Set(prev)
+                    next.has(cat.id) ? next.delete(cat.id) : next.add(cat.id)
+                    return next
+                  })}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-[#202c33] transition text-left"
+                >
+                  <svg
+                    className="w-3.5 h-3.5 text-[#8696a0] flex-shrink-0 transition-transform"
+                    style={{ transform: libExpanded.has(cat.id) ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="flex-1 text-sm text-white font-medium">{cat.name}</span>
+                  <span className="text-[#8696a0] text-xs">{cat.videos.length}</span>
+                </button>
+                {libExpanded.has(cat.id) && cat.videos
+                  .filter(v => !libSearch || v.name.toLowerCase().includes(libSearch.toLowerCase()))
+                  .map(vid => (
+                    <div key={vid.id} className="flex items-center gap-2 pl-8 pr-3 py-2 hover:bg-[#202c33] transition border-t border-[#222e35]/40">
+                      <svg className="w-3.5 h-3.5 text-[#8696a0] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.277A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                      </svg>
+                      <span className="flex-1 text-xs text-[#e9edef] truncate">{vid.name}</span>
+                      <button
+                        onClick={() => {
+                          setSendingVideo(vid.id)
+                          fetch('/api/whatsapp/send-media', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              instanceName: contact.instance_name,
+                              phone: contact.phone,
+                              mediatype: 'video',
+                              mimetype: 'video/mp4',
+                              media: vid.url,
+                              caption: vid.name,
+                              contactId: contact.id,
+                            }),
+                          }).catch(() => {}).finally(() => setSendingVideo(null))
+                        }}
+                        disabled={sendingVideo === vid.id}
+                        className="text-[10px] bg-[#00a884] hover:bg-[#06cf9c] disabled:opacity-50 text-white px-2 py-1 rounded transition font-medium flex-shrink-0"
+                      >
+                        {sendingVideo === vid.id ? '...' : 'Enviar'}
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            ))}
+        </div>
+      </div>
+      )}
       </div>
     </div>
   )

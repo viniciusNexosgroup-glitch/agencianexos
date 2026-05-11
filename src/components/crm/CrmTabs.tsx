@@ -10,9 +10,11 @@ const TABS = [
   { key: 'supervisor', label: 'Supervisor' },
   { key: 'flows',      label: 'Flows' },
   { key: 'ia',         label: 'Agente IA' },
+  { key: 'followup',   label: 'Follow-up' },
+  { key: 'biblioteca', label: 'Biblioteca' },
 ]
 
-export type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia'
+export type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia' | 'followup' | 'biblioteca'
 
 export function CrmTabs({ active }: { active: CrmTab }) {
   const router = useRouter()

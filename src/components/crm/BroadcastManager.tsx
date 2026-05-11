@@ -61,6 +61,7 @@ export function BroadcastManager() {
   })
 
   const [estimatedReach, setEstimatedReach] = useState<number | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchCampaigns()
@@ -128,17 +129,23 @@ export function BroadcastManager() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
+    setSubmitError(null)
     try {
       const res = await fetch('/api/whatsapp/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       })
+      const data = await res.json().catch(() => ({}))
       if (res.ok) {
         setForm({ name: '', instance_name: '', message: '', tag_ids: [] })
         setShowForm(false)
         await fetchCampaigns()
+      } else {
+        setSubmitError(data?.error ?? 'Erro ao criar campanha. Tente novamente.')
       }
+    } catch {
+      setSubmitError('Erro de conexão. Verifique sua internet e tente novamente.')
     } finally {
       setSubmitting(false)
     }
@@ -254,6 +261,12 @@ export function BroadcastManager() {
                 </p>
               )}
             </div>
+
+            {submitError && (
+              <p className="text-red-400 text-sm bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">
+                {submitError}
+              </p>
+            )}
 
             <div className="flex justify-end pt-2">
               <button

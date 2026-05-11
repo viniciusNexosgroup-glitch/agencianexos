@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { fetchGroupInfo, getMediaBase64 } from './evolution'
+import { runFlowsForMessage } from './flow-engine'
 
 function supabase() {
   return createClient(
@@ -98,9 +99,28 @@ export async function processWebhookEvent(body: any) {
     )
   }
 
+  // ── STATUS DE MENSAGEM (entregue, lido, etc.) ──────────────
+  if (event === 'MESSAGES_UPDATE') {
+    const updates = Array.isArray(body.data) ? body.data : [body.data]
+    await Promise.all(
+      updates.map(async (u: any) => {
+        const msgId: string = u?.key?.id || ''
+        const status: number | undefined = u?.update?.status
+        if (msgId && status !== undefined) {
+          await db.from('whatsapp_messages')
+            .update({ status: Number(status) })
+            .eq('message_id', msgId)
+        }
+      })
+    )
+  }
+
   // ── MESSAGES ───────────────────────────────────────────────
   if (event === 'MESSAGES_UPSERT') {
     const messages = Array.isArray(body.data) ? body.data : [body.data]
+
+    // Cache de nomes para evitar N+1 queries quando batch tem múltiplas msgs do mesmo contato
+    const contactNameCache = new Map<string, string>()
 
     for (const msg of messages) {
       if (!msg?.key?.remoteJid) continue
@@ -117,6 +137,53 @@ export async function processWebhookEvent(body: any) {
       // Desempacota mensagens aninhadas (deviceSentMessage, ephemeralMessage, etc.)
       const innerMsg = msg.message?.deviceSentMessage?.message || msg.message || {}
       const msgType = Object.keys(innerMsg).find(k => !META_KEYS.has(k)) || 'text'
+
+      // Mensagem apagada para todos (protocolMessage REVOKE)
+      if (msgType === 'protocolMessage' && innerMsg.protocolMessage?.type === 'REVOKE') {
+        const deletedId = innerMsg.protocolMessage?.key?.id
+        if (deletedId) {
+          await db.from('whatsapp_messages')
+            .update({ message_type: 'revoked', body: '', media_url: null, media_data: null })
+            .eq('message_id', deletedId)
+        }
+        continue
+      }
+
+      // Voto em enquete: atualiza media_data da enquete original
+      if (msgType === 'pollUpdateMessage') {
+        const update = innerMsg.pollUpdateMessage
+        const pollMsgId = update?.pollCreationMessageKey?.id
+        const selectedOptions: string[] = update?.vote?.selectedOptions ?? []
+        const voter = fromMe ? 'me' : phone
+
+        if (pollMsgId) {
+          const { data: pollMsg } = await db.from('whatsapp_messages')
+            .select('id, media_data')
+            .eq('message_id', pollMsgId)
+            .maybeSingle()
+
+          if (pollMsg?.media_data) {
+            const md = pollMsg.media_data as Record<string, unknown>
+            const votes = { ...((md.votes as Record<string, string[]>) ?? {}) }
+
+            if (selectedOptions.length === 0) {
+              delete votes[voter]
+            } else {
+              votes[voter] = selectedOptions
+            }
+
+            const options = ((md.options as Array<{ name: string; votes: number }>) ?? []).map(opt => ({
+              ...opt,
+              votes: Object.values(votes).filter((v) => Array.isArray(v) && v.includes(opt.name)).length,
+            }))
+
+            await db.from('whatsapp_messages')
+              .update({ media_data: { ...md, votes, options } })
+              .eq('id', pollMsg.id)
+          }
+        }
+        continue
+      }
 
       // Reação: atualiza a mensagem alvo e não insere nova mensagem
       if (msgType === 'reactionMessage') {
@@ -143,6 +210,7 @@ export async function processWebhookEvent(body: any) {
         || innerMsg.extendedTextMessage?.text
         || innerMsg.imageMessage?.caption
         || innerMsg.videoMessage?.caption
+        || innerMsg.pollCreationMessage?.name
         || ''
       const timestamp = msg.messageTimestamp
         ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
@@ -152,31 +220,40 @@ export async function processWebhookEvent(body: any) {
       const participantJid  = isGroup ? (msg.key.participant || msg.participant || '') : ''
       const participantName = isGroup ? (msg.pushName || participantJid.replace('@s.whatsapp.net', '')) : ''
 
-      // Nome do contato: grupos buscam da Evolution API se não tiver nome real ainda
+      // Nome do contato: usa cache para evitar N+1 queries em batches com múltiplas msgs do mesmo número
       let contactName: string
       if (isGroup) {
-        // Verifica se já existe um nome real no banco antes de chamar a API
-        const { data: existing } = await db.from('whatsapp_contacts')
-          .select('name')
-          .eq('instance_name', instance)
-          .eq('phone', phone)
-          .maybeSingle()
-
-        const hasRealName = existing?.name && !existing.name.endsWith('@g.us') && existing.name !== phone
-        if (hasRealName) {
-          contactName = existing!.name
+        const cached = contactNameCache.get(phone)
+        if (cached) {
+          contactName = cached
         } else {
-          const fetched = await fetchGroupInfo(instance, remoteJid)
-          contactName = fetched || existing?.name || phone
+          const { data: existing } = await db.from('whatsapp_contacts')
+            .select('name')
+            .eq('instance_name', instance)
+            .eq('phone', phone)
+            .maybeSingle()
+          const hasRealName = existing?.name && !existing.name.endsWith('@g.us') && existing.name !== phone
+          if (hasRealName) {
+            contactName = existing!.name
+          } else {
+            const fetched = await fetchGroupInfo(instance, remoteJid)
+            contactName = fetched || existing?.name || phone
+          }
+          contactNameCache.set(phone, contactName)
         }
       } else if (fromMe) {
-        // Para mensagens enviadas por mim, pushName é meu próprio nome — preservar nome existente do contato
-        const { data: existing } = await db.from('whatsapp_contacts')
-          .select('name')
-          .eq('instance_name', instance)
-          .eq('phone', phone)
-          .maybeSingle()
-        contactName = existing?.name || phone
+        const cached = contactNameCache.get(phone)
+        if (cached) {
+          contactName = cached
+        } else {
+          const { data: existing } = await db.from('whatsapp_contacts')
+            .select('name')
+            .eq('instance_name', instance)
+            .eq('phone', phone)
+            .maybeSingle()
+          contactName = existing?.name || phone
+          contactNameCache.set(phone, contactName)
+        }
       } else {
         contactName = msg.pushName || phone
       }
@@ -193,6 +270,22 @@ export async function processWebhookEvent(body: any) {
         source_url: referral?.source_url || null,
       }
 
+      // Monta preview da última mensagem (igual ao WhatsApp)
+      const mediaLabels: Record<string, string> = {
+        imageMessage: '📷 Foto',
+        videoMessage: '🎥 Vídeo',
+        audioMessage: '🎵 Áudio',
+        ptvMessage: '🎥 Vídeo',
+        documentMessage: '📄 Documento',
+        stickerMessage: '🌟 Sticker',
+      }
+      const msgPreview = mediaLabels[msgType] ?? text
+      const lastMessageBody = fromMe
+        ? `Você: ${msgPreview}`
+        : isGroup && participantName
+          ? `${participantName}: ${msgPreview}`
+          : msgPreview
+
       const { error } = await db.rpc('process_whatsapp_message', {
         p_instance_name:    instance,
         p_phone:            phone,
@@ -206,6 +299,13 @@ export async function processWebhookEvent(body: any) {
         p_participant_name: participantName || null,
         p_participant_jid:  participantJid  || null,
       })
+
+      if (!error) {
+        await db.from('whatsapp_contacts')
+          .update({ last_message_body: lastMessageBody })
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+      }
 
       if (error) {
         console.error('Erro ao processar mensagem via RPC:', error.message)
@@ -223,6 +323,24 @@ export async function processWebhookEvent(body: any) {
               .eq('message_id', msg.key.id)
           }
         } catch { /* falha silenciosa */ }
+      }
+
+      // Contato compartilhado: salva vcard em media_data
+      if (!error && msgType === 'contactMessage') {
+        const c = innerMsg.contactMessage
+        if (c?.vcard) {
+          await db.from('whatsapp_messages')
+            .update({ media_data: { displayName: c.displayName || '', vcard: c.vcard } })
+            .eq('message_id', msg.key.id)
+        }
+      }
+      if (!error && msgType === 'contactsArrayMessage') {
+        const contacts = (innerMsg.contactsArrayMessage?.contacts ?? []) as Array<{ displayName?: string; vcard?: string }>
+        if (contacts.length > 0) {
+          await db.from('whatsapp_messages')
+            .update({ media_data: { contacts: contacts.map(c => ({ displayName: c.displayName || '', vcard: c.vcard || '' })) } })
+            .eq('message_id', msg.key.id)
+        }
       }
 
       // Vídeo: salva thumbnail + dados completos do vídeo (mediaKey, url, etc.) para download sob demanda
@@ -244,9 +362,102 @@ export async function processWebhookEvent(body: any) {
         }
       }
 
-      // Incrementa não lidas para qualquer mensagem recebida (individual ou grupo)
+      // Documento: salva metadados (nome, tipo, tamanho) + dados para download sob demanda
+      if (!error && msgType === 'documentMessage') {
+        const docMsg = innerMsg.documentMessage
+        if (docMsg) {
+          const { jpegThumbnail: _t, ...docData } = docMsg as Record<string, unknown>
+          await db.from('whatsapp_messages').update({
+            media_data: {
+              fileName: (docMsg as Record<string, unknown>).title || (docMsg as Record<string, unknown>).fileName || 'documento',
+              mimetype: (docMsg as Record<string, unknown>).mimetype || 'application/octet-stream',
+              fileLength: (docMsg as Record<string, unknown>).fileLength ? Number((docMsg as Record<string, unknown>).fileLength) : null,
+              key: { remoteJid, fromMe, id: msg.key.id, participant: msg.key.participant || null },
+              message: { documentMessage: docData },
+            },
+          }).eq('message_id', msg.key.id)
+        }
+      }
+
+      // Enquete: salva nome e opções em media_data para renderização no CRM
+      if (!error && msgType === 'pollCreationMessage') {
+        const poll = innerMsg.pollCreationMessage
+        if (poll?.options) {
+          await db.from('whatsapp_messages').update({
+            media_data: {
+              name: poll.name ?? text,
+              options: (poll.options as Array<{ optionName?: string; name?: string }>).map(o => ({
+                name: o.optionName ?? o.name ?? '',
+                votes: 0,
+              })),
+              selectableCount: poll.selectableOptionsCount ?? 1,
+              votes: {},
+            }
+          }).eq('message_id', msg.key.id)
+        }
+      }
+
+      // Contexto de resposta (reply/quoted message)
+      const contextInfo = innerMsg.extendedTextMessage?.contextInfo
+        || innerMsg.imageMessage?.contextInfo
+        || innerMsg.audioMessage?.contextInfo
+        || null
+      if (!error && contextInfo?.quotedMessage && contextInfo?.stanzaId) {
+        const qMsg = contextInfo.quotedMessage
+        const quotedBody = qMsg.conversation
+          || qMsg.extendedTextMessage?.text
+          || qMsg.imageMessage?.caption
+          || qMsg.videoMessage?.caption
+          || '[mídia]'
+        const senderPhone = contextInfo.participant?.replace('@s.whatsapp.net', '') || null
+        try {
+          const { data: existing } = await db.from('whatsapp_messages')
+            .select('media_data')
+            .eq('message_id', msg.key.id)
+            .maybeSingle()
+          const merged = { ...(existing?.media_data as Record<string, unknown> || {}), _reply: {
+            id: contextInfo.stanzaId,
+            body: quotedBody,
+            sender_name: senderPhone,
+            from_me: !contextInfo.participant,
+          }}
+          await db.from('whatsapp_messages').update({ media_data: merged }).eq('message_id', msg.key.id)
+        } catch { /* falha silenciosa */ }
+      }
+
+      // Incrementa não lidas para mensagens recebidas; zera para enviadas por mim
       if (!fromMe) {
         await db.rpc('increment_unread_count', { p_instance_name: instance, p_phone: phone })
+      } else {
+        // Garante que mensagem enviada por mim não incremente o badge (defensivo contra RPC)
+        await db.from('whatsapp_contacts')
+          .update({ unread_count: 0 })
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+          .gt('unread_count', 0)
+      }
+
+      // Executa flows ativos para mensagens recebidas (independente de erro na RPC)
+      if (!fromMe && !isGroup) {
+        const { data: contactForFlow } = await db
+          .from('whatsapp_contacts')
+          .select('id')
+          .eq('instance_name', instance)
+          .eq('phone', phone)
+          .maybeSingle()
+
+        console.log('[Flow] contato encontrado:', contactForFlow?.id, 'text:', text, 'instance:', instance)
+
+        if (contactForFlow?.id) {
+          const { count: msgCount } = await db
+            .from('whatsapp_messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('contact_id', contactForFlow.id)
+
+          const isFirstMessage = (msgCount ?? 0) <= 1
+
+          await runFlowsForMessage(db, instance, remoteJid, contactForFlow.id, text, isFirstMessage)
+        }
       }
 
       if (!error && referral && Object.values(utm).some(v => v !== null)) {
@@ -258,22 +469,22 @@ export async function processWebhookEvent(body: any) {
       }
 
       // Auto-criar lead na etapa "Lead" quando for mensagem recebida de novo contato
+      // Usa o contato já buscado na seção de flows acima (evita query duplicada)
       if (!error && !fromMe && !isGroup) {
-        const { data: contact } = await db
+        const { data: contactForLead } = await db
           .from('whatsapp_contacts')
           .select('id')
           .eq('instance_name', instance)
           .eq('phone', phone)
-          .single()
+          .maybeSingle()
 
-        if (contact?.id) {
+        if (contactForLead?.id) {
           const { count } = await db
             .from('crm_leads')
             .select('id', { count: 'exact', head: true })
-            .eq('contact_id', contact.id)
+            .eq('contact_id', contactForLead.id)
 
           if ((count ?? 0) === 0) {
-            // Busca a etapa "Lead" no primeiro funil disponível
             const { data: leadStage } = await db
               .from('crm_stages')
               .select('id, funnel_id')
@@ -291,13 +502,17 @@ export async function processWebhookEvent(body: any) {
                 .limit(1)
                 .single()
 
-              await db.from('crm_leads').insert({
-                contact_id: contact.id,
-                stage_id: leadStage.id,
-                funnel_id: leadStage.funnel_id,
-                title: contactName || phone,
-                position: (maxPos?.position ?? -1) + 1,
-              })
+              // try/catch torna idempotente: se dois webhooks simultâneos tentarem criar o mesmo lead,
+              // o segundo falhará silenciosamente (DB constraint ou contagem desatualizada)
+              try {
+                await db.from('crm_leads').insert({
+                  contact_id: contactForLead.id,
+                  stage_id: leadStage.id,
+                  funnel_id: leadStage.funnel_id,
+                  title: contactName || phone,
+                  position: (maxPos?.position ?? -1) + 1,
+                })
+              } catch { /* lead já criado por webhook concorrente */ }
             }
           }
         }

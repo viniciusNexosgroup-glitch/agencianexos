@@ -63,7 +63,6 @@ export async function POST(req: NextRequest) {
       options: options ?? null,
       position: resolvedPosition,
       is_active: true,
-      created_by: session.sub,
     })
     .select()
     .single()

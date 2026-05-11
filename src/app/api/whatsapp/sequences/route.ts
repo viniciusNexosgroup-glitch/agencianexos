@@ -14,10 +14,10 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { data, error } = await supabase()
-    .from('sequences')
-    .select('*, sequence_steps(*)')
-    .order('created_at', { ascending: false })
+  let q = supabase().from('sequences').select('*, sequence_steps(*)').order('created_at', { ascending: false })
+  if (!session.is_admin) q = q.eq('created_by', session.sub)
+
+  const { data, error } = await q
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessInstance, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -31,11 +32,13 @@ export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { instanceName, contactId, phone, text, is_internal } = await req.json()
+  const { instanceName, contactId, phone, text, is_internal, quoted } = await req.json()
 
   if (!instanceName || !phone || !text) {
     return NextResponse.json({ error: 'instanceName, phone e text são obrigatórios' }, { status: 400 })
   }
+
+  if (!await canAccessInstance(instanceName, session)) return denied()
 
   if (phone.includes('@lid')) {
     return NextResponse.json({ error: 'Contato inválido (dispositivo vinculado)' }, { status: 400 })
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest) {
 
   // Nota interna: salva só no banco, não envia pelo WhatsApp
   if (is_internal) {
-    const { error: dbError } = await supabase().from('whatsapp_messages').insert({
+    const { data: inserted, error: dbError } = await supabase().from('whatsapp_messages').insert({
       contact_id: contactId,
       instance_name: instanceName,
       message_id: crypto.randomUUID(),
@@ -52,18 +55,20 @@ export async function POST(req: NextRequest) {
       message_type: 'text',
       timestamp: new Date().toISOString(),
       is_internal: true,
-    })
+    }).select('id, message_id').single()
     if (dbError) console.error('DB insert error (internal note):', dbError.message)
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, id: inserted?.id, message_id: inserted?.message_id })
   }
 
   const isGroup = phone.includes('@g.us')
   const number = isGroup ? phone : phone.includes('@') ? phone : `${phone}@s.whatsapp.net`
 
   async function doSend() {
+    const payload: Record<string, unknown> = { number, text }
+    if (quoted) payload.quoted = quoted
     return evFetch(`/message/sendText/${instanceName}`, {
       method: 'POST',
-      body: JSON.stringify({ number, text }),
+      body: JSON.stringify(payload),
     })
   }
 
@@ -77,6 +82,7 @@ export async function POST(req: NextRequest) {
     if (isNotAcceptable) {
       console.log(`[send] not-acceptable para grupo ${number} — aquecendo sessão e tentando novamente...`)
       await warmupGroup(instanceName, number)
+      await sleep(2000)
       res = await doSend()
       result = await res.json().catch(() => ({})) as Record<string, unknown>
     }
@@ -92,7 +98,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 
-  const { error: dbError } = await supabase().from('whatsapp_messages').insert({
+  const { data: inserted, error: dbError } = await supabase().from('whatsapp_messages').insert({
     contact_id: contactId,
     instance_name: instanceName,
     message_id: (result.key as Record<string, unknown>)?.id as string || crypto.randomUUID(),
@@ -101,9 +107,9 @@ export async function POST(req: NextRequest) {
     message_type: 'text',
     timestamp: new Date().toISOString(),
     is_internal: false,
-  })
+  }).select('id, message_id').single()
 
   if (dbError) console.error('DB insert error:', dbError.message)
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, id: inserted?.id, message_id: inserted?.message_id })
 }

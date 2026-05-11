@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessContact, getUserInstanceNames, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
   const contactId = req.nextUrl.searchParams.get('contact_id')
 
   if (contactId) {
+    if (!await canAccessContact(contactId, session)) return denied()
     const { data: lead } = await supabase()
       .from('crm_leads')
       .select('id, stage_id, contact_id, funnel_id')
@@ -28,12 +30,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ lead: lead ?? null })
   }
 
+  // Para listar todos os leads, restringe aos contatos das instâncias do usuário
   let query = supabase()
     .from('crm_leads')
     .select('*, whatsapp_contacts(*), crm_stages(name, position)')
     .order('position', { ascending: true })
 
   if (funnelId) query = query.eq('funnel_id', funnelId)
+
+  if (!session.is_admin) {
+    const names = await getUserInstanceNames(session)
+    if (names !== null && names.length === 0) return NextResponse.json({ leads: [] })
+    if (names !== null) {
+      const { data: contacts } = await supabase().from('whatsapp_contacts').select('id').in('instance_name', names)
+      const ids = (contacts ?? []).map(c => c.id as string)
+      if (ids.length === 0) return NextResponse.json({ leads: [] })
+      query = query.in('contact_id', ids)
+    }
+  }
 
   const { data } = await query
   return NextResponse.json({ leads: data ?? [] })
@@ -43,7 +57,29 @@ export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { contactId, stageId, funnelId, title, notes, value } = await req.json()
+  const body = await req.json()
+  const { contact_id, notes, value } = body
+  let { contactId, stageId, funnelId, title } = body
+
+  // Suporta contact_id (snake_case) além de contactId
+  if (!contactId && contact_id) contactId = contact_id
+
+  if (contactId && !await canAccessContact(contactId, session)) return denied()
+
+  // Se não foi passado stageId, busca a primeira etapa "Lead" disponível
+  if (!stageId) {
+    const { data: stage } = await supabase()
+      .from('crm_stages')
+      .select('id, funnel_id')
+      .eq('name', 'Lead')
+      .order('position', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (stage) {
+      stageId = stage.id
+      funnelId = stage.funnel_id
+    }
+  }
 
   const { data: maxPos } = await supabase()
     .from('crm_leads')
@@ -51,7 +87,7 @@ export async function POST(req: NextRequest) {
     .eq('stage_id', stageId)
     .order('position', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   const position = (maxPos?.position ?? -1) + 1
 

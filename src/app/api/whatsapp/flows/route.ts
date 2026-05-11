@@ -16,10 +16,10 @@ export async function GET() {
 
   const db = supabase()
 
-  const { data: flows, error } = await db
-    .from('flows')
-    .select('*')
-    .order('created_at', { ascending: false })
+  let flowsQuery = db.from('flows').select('*').order('created_at', { ascending: false })
+  if (!session.is_admin) flowsQuery = flowsQuery.eq('created_by', session.sub)
+
+  const { data: flows, error } = await flowsQuery
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
       trigger_type,
       trigger_value: trigger_value ?? null,
       is_active: false,
+      steps: body.steps ?? [],
       created_by: session.sub,
     })
     .select()

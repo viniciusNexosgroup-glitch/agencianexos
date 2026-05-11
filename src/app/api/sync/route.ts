@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { syncAccount, daysAgo, today } from '@/lib/meta-sync'
+import { syncAccount, syncAccountAds, daysAgo, today } from '@/lib/meta-sync'
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get('x-sync-secret')
@@ -65,6 +65,12 @@ export async function POST(req: NextRequest) {
         })
         continue
       }
+    }
+
+    // Sync ad-level metrics (creatives)
+    const { rows: adRows, error: adError } = await syncAccountAds(adAccountId, from, to)
+    if (!adError && adRows.length > 0) {
+      await supabase.from('ad_metrics').upsert(adRows, { onConflict: 'ad_id,metric_date' })
     }
 
     await supabase.from('sync_logs').insert({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -18,6 +19,13 @@ export async function GET(req: NextRequest) {
   if (!funnelId) return NextResponse.json({ error: 'funnel_id é obrigatório' }, { status: 400 })
 
   const db = supabase()
+
+  // Verifica se o funil pertence ao usuário
+  if (!session.is_admin) {
+    const { data: funnel } = await db.from('crm_funnels').select('created_by').eq('id', funnelId).single()
+    if (!funnel) return NextResponse.json({ error: 'Funil não encontrado' }, { status: 404 })
+    if (funnel.created_by !== session.sub) return denied()
+  }
 
   const { data: stages, error: stagesError } = await db
     .from('crm_stages')

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
 import { redirect } from 'next/navigation'
@@ -10,8 +12,10 @@ import { FlowBuilder } from '@/components/crm/FlowBuilder'
 import { AIAgentManager } from '@/components/crm/AIAgentManager'
 import { DepartmentManager } from '@/components/crm/DepartmentManager'
 import { HSMTemplates } from '@/components/crm/HSMTemplates'
+import { FollowUpManager } from '@/components/crm/FollowUpManager'
+import { VideoLibraryManager } from '@/components/crm/VideoLibraryManager'
 
-type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia' | 'departamentos' | 'templates'
+type CrmTab = 'kanban' | 'contatos' | 'instancias' | 'broadcast' | 'supervisor' | 'flows' | 'ia' | 'departamentos' | 'templates' | 'followup' | 'biblioteca'
 
 function supabase() {
   return createClient(
@@ -21,11 +25,15 @@ function supabase() {
   )
 }
 
+const ADMIN_TABS: CrmTab[] = ['supervisor', 'departamentos']
+
 export default async function CrmPage({ searchParams }: { searchParams: { tab?: string } }) {
   const session = await getSession()
   if (!session) redirect('/login')
 
   const tab = (searchParams.tab || 'kanban') as CrmTab
+
+  if (ADMIN_TABS.includes(tab) && !session.is_admin) redirect('/dashboard/crm')
   const db = supabase()
 
   const { data: funnels } = await db
@@ -67,6 +75,12 @@ export default async function CrmPage({ searchParams }: { searchParams: { tab?: 
         )}
         {tab === 'templates' && (
           <HSMTemplates />
+        )}
+        {tab === 'followup' && (
+          <FollowUpManager />
+        )}
+        {tab === 'biblioteca' && (
+          <VideoLibraryManager />
         )}
       </div>
     </div>

@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
+import { canAccessInstance, denied } from '@/lib/tenant'
 
 export async function POST(req: NextRequest, { params }: { params: { name: string } }) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
+  const { name } = params
+  if (!await canAccessInstance(name, session)) return denied()
+
   const BASE_URL = process.env.EVOLUTION_API_URL!
   const API_KEY = process.env.EVOLUTION_API_KEY!
-  const { name } = params
 
   try {
     const res = await fetch(`${BASE_URL}/group/fetchAllGroups/${name}?getParticipants=false`, {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { canAccessContact, denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -19,6 +20,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { contact_id } = body
 
   if (!contact_id) return NextResponse.json({ error: 'contact_id é obrigatório' }, { status: 400 })
+
+  if (!await canAccessContact(contact_id, session)) return denied()
 
   const db = supabase()
 

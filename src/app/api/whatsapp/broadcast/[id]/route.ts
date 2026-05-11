@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSession } from '@/lib/session'
+import { denied } from '@/lib/tenant'
 
 function supabase() {
   return createClient(
@@ -91,6 +92,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .single()
 
   if (error || !campaign) return NextResponse.json({ error: 'Campanha não encontrada' }, { status: 404 })
+  if (!session.is_admin && campaign.created_by !== session.sub) return denied()
 
   const { data: recipients } = await db
     .from('broadcast_recipients')
@@ -127,6 +129,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .single()
 
   if (!campaign) return NextResponse.json({ error: 'Campanha não encontrada' }, { status: 404 })
+  if (!session.is_admin && campaign.created_by !== session.sub) return denied()
 
   if (campaign.status !== 'draft') {
     return NextResponse.json({ error: `Campanha não pode ser iniciada (status: ${campaign.status})` }, { status: 400 })
@@ -151,6 +154,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     .single()
 
   if (!campaign) return NextResponse.json({ error: 'Campanha não encontrada' }, { status: 404 })
+  if (!session.is_admin && campaign.created_by !== session.sub) return denied()
 
   if (campaign.status !== 'draft') {
     return NextResponse.json({ error: 'Apenas campanhas com status draft podem ser canceladas' }, { status: 400 })

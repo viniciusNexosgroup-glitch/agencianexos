@@ -470,6 +470,14 @@ export function KanbanBoard({ stages, leads: initialLeads, contacts, onChat, onL
 
   useEffect(() => { setLeads(initialLeads) }, [initialLeads])
 
+  useEffect(() => {
+    function handler(e: Event) {
+      setNewLeadStageId((e as CustomEvent<string>).detail)
+    }
+    document.addEventListener('kanban:newlead', handler)
+    return () => document.removeEventListener('kanban:newlead', handler)
+  }, [])
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const activeLead = leads.find(l => l.id === activeId) ?? null
 
@@ -481,8 +489,17 @@ export function KanbanBoard({ stages, leads: initialLeads, contacts, onChat, onL
     if (!over) return
     const leadId = String(active.id)
     const newStageId = String(over.id)
+    const oldStageId = leads.find(l => l.id === leadId)?.stage_id
+    if (newStageId === oldStageId) return
+    // Atualização otimista
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage_id: newStageId } : l))
-    await onLeadMoved?.(leadId, newStageId)
+    try {
+      await onLeadMoved?.(leadId, newStageId)
+    } catch (err) {
+      console.error('[Kanban] Erro ao mover lead, revertendo:', err)
+      // Reverte se a API falhar
+      setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage_id: oldStageId! } : l))
+    }
   }
 
   const leadsFor = useCallback((stageId: string) => {

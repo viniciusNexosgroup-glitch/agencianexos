@@ -14,10 +14,10 @@ export async function GET() {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
-  const { data, error } = await supabase()
-    .from('tags')
-    .select('id, name, color')
-    .order('name')
+  let q = supabase().from('tags').select('id, name, color').order('name')
+  if (!session.is_admin) q = q.eq('created_by', session.sub)
+
+  const { data, error } = await q
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase()
     .from('tags')
-    .insert({ name: name.trim(), color: color ?? '#6B7280' })
+    .insert({ name: name.trim(), color: color ?? '#6B7280', created_by: session.sub })
     .select('id, name, color')
     .single()
 
