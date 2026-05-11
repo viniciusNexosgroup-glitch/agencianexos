@@ -1,7 +1,7 @@
 const https = require('https')
 
-const PROJECT_REF = 'viryvodvyuekljkyvepe'
-const TOKEN = 'sbp_5c9a8318bf834ee0461e4e9033e9bccfa253569c'
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || ''
+const TOKEN = process.env.SUPABASE_ACCESS_TOKEN || ''
 
 function runSQL(sql) {
   return new Promise((resolve, reject) => {
