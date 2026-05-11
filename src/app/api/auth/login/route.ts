@@ -27,13 +27,19 @@ export async function POST(req: NextRequest) {
     .eq('email', email)
     .single()
 
-  if (error || !user || !user.password_hash) {
-    return NextResponse.json({ error: 'Email ou senha incorretos' }, { status: 401 })
+  if (error || !user) {
+    console.error('DB error:', error?.message, '| user found:', !!user)
+    return NextResponse.json({ error: 'db:' + (error?.message || 'user_not_found') }, { status: 401 })
+  }
+
+  if (!user.password_hash) {
+    return NextResponse.json({ error: 'db:no_hash' }, { status: 401 })
   }
 
   const valid = await bcrypt.compare(password, user.password_hash)
+  console.log('bcrypt result:', valid, '| hash prefix:', user.password_hash?.slice(0, 10))
   if (!valid) {
-    return NextResponse.json({ error: 'Email ou senha incorretos' }, { status: 401 })
+    return NextResponse.json({ error: 'senha_invalida' }, { status: 401 })
   }
 
   const token = await new SignJWT({
