@@ -21,43 +21,33 @@ export async function POST(req: NextRequest) {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 
-  // Buscar usuário diretamente no banco (bypassa GoTrue)
-  const { data: users, error } = await supabase
+  const { data: user, error } = await supabase
     .from('clients')
-    .select('id, name, email, is_admin')
+    .select('id, name, email, is_admin, password_hash')
     .eq('email', email)
     .single()
 
-  if (error || !users) {
+  if (error || !user || !user.password_hash) {
     return NextResponse.json({ error: 'Email ou senha incorretos' }, { status: 401 })
   }
 
-  // Buscar hash da senha em auth.users via RPC
-  const { data: authData, error: authError } = await supabase
-    .rpc('get_encrypted_password', { user_email: email })
-
-  if (authError || !authData) {
-    return NextResponse.json({ error: 'Email ou senha incorretos' }, { status: 401 })
-  }
-
-  const valid = await bcrypt.compare(password, authData)
+  const valid = await bcrypt.compare(password, user.password_hash)
   if (!valid) {
     return NextResponse.json({ error: 'Email ou senha incorretos' }, { status: 401 })
   }
 
-  // Criar JWT de sessão
   const token = await new SignJWT({
-    sub: users.id,
-    email: users.email,
-    name: users.name,
-    is_admin: users.is_admin,
+    sub: user.id,
+    email: user.email,
+    name: user.name,
+    is_admin: user.is_admin,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('7d')
     .sign(JWT_SECRET)
 
-  const response = NextResponse.json({ ok: true, user: users })
+  const response = NextResponse.json({ ok: true, user })
   response.cookies.set('session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
