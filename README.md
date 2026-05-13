@@ -22,7 +22,6 @@ Os workflows usam variaveis de ambiente do n8n:
 - `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`
 - `APIFY_TOKEN`
 - `OPENAI_API_KEY`
-- `GROQ_API_KEY`
 - `CAL_API_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `EVOLUTION_API_KEY`
