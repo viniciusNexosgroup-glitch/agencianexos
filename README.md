@@ -54,3 +54,11 @@ Nome sugerido do campo:
 ```txt
 Resumo do Lead
 ```
+
+Alem disso, depois que o booking e criado, o sub-workflow `04 - Cal.com Tools` busca a referencia `google_calendar` do booking no Cal.com e atualiza a descricao do evento no Google Calendar. Quando funcionar, a saida do node `Finaliza Booking` termina com:
+
+```txt
+CALENDAR_DESC_OK
+```
+
+Se aparecer `CALENDAR_DESC_WARN`, verifique se o Cal.com esta conectado ao Google Calendar e se a `CAL_API_KEY` tem permissao para ler bookings e atualizar eventos de calendario.
