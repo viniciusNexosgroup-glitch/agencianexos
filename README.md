@@ -17,6 +17,7 @@ As chaves reais nao devem ser commitadas. O arquivo local `CREDENCIAIS.md` fica 
 
 Os workflows usam variaveis de ambiente do n8n:
 
+- `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`
 - `APIFY_TOKEN`
 - `OPENAI_API_KEY`
 - `GROQ_API_KEY`
@@ -25,3 +26,15 @@ Os workflows usam variaveis de ambiente do n8n:
 - `EVOLUTION_API_KEY`
 
 Use `.env.local.example` apenas como referencia de nomes.
+
+## Erro: access to env vars denied
+
+Se algum node mostrar `access to env vars denied`, a instancia do n8n esta bloqueando o uso de `$env`.
+
+Configure no ambiente onde o n8n roda:
+
+```env
+N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+```
+
+Depois reinicie o n8n e execute o workflow novamente.
