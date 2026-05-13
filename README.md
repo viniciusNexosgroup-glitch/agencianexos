@@ -38,3 +38,19 @@ N8N_BLOCK_ENV_ACCESS_IN_NODE=false
 ```
 
 Depois reinicie o n8n e execute o workflow novamente.
+
+## Resumo do lead no agendamento
+
+O workflow envia o resumo do lead para o Cal.com em `bookingFieldsResponses.lead_summary` e tambem em `metadata.leadSummary`.
+
+Para esse resumo aparecer de forma organizada no evento/calendario, crie no event type do Cal.com um campo personalizado com o identificador/slug:
+
+```txt
+lead_summary
+```
+
+Nome sugerido do campo:
+
+```txt
+Resumo do Lead
+```
