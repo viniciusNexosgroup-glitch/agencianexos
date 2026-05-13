@@ -39,6 +39,10 @@ function getNodeIncludes(workflow, text) {
   return workflow.json.nodes.find((node) => String(node.name || '').includes(text));
 }
 
+function outputTargets(workflow, nodeName, outputIndex) {
+  return (workflow.json.connections[nodeName]?.main?.[outputIndex] || []).map((connection) => connection.node);
+}
+
 function envRefs(text) {
   const refs = new Set();
   for (const match of String(text).matchAll(/\$env\.([A-Z0-9_]+)/g)) refs.add(match[1]);
@@ -139,16 +143,18 @@ function validateEnvAndSecrets(workflows) {
 }
 
 function validateStaticBusinessRules(workflows) {
+  const scraping = workflows.find((workflow) => workflow.file === '01-scraping.json');
   const sdr = workflows.find((workflow) => workflow.file === '03-sdr.json');
   const cal = workflows.find((workflow) => workflow.file === '04-calcom-tools.json');
   const outbound = workflows.find((workflow) => workflow.file === '02-mensagens.json');
   const followup = workflows.find((workflow) => workflow.file === '05-followup.json');
 
+  assert('Workflow scraping existe', Boolean(scraping));
   assert('Workflow SDR existe', Boolean(sdr));
   assert('Workflow Cal.com existe', Boolean(cal));
   assert('Workflow primeira mensagem existe', Boolean(outbound));
   assert('Workflow follow-up existe', Boolean(followup));
-  if (!sdr || !cal || !outbound || !followup) return;
+  if (!scraping || !sdr || !cal || !outbound || !followup) return;
 
   assert('Ferramenta remarcar_agendamento existe', Boolean(getNode(sdr, 'remarcar_agendamento')));
   assert('Ferramenta remarcar_agendamento conectada ao agente', JSON.stringify(sdr.json.connections.remarcar_agendamento || '').includes('SDR Agent'));
@@ -162,6 +168,13 @@ function validateStaticBusinessRules(workflows) {
   const bookingNode = getNode(cal, 'Cal.com Booking');
   const versionHeader = bookingNode.parameters.headerParameters.parameters.find((param) => param.name === 'cal-api-version');
   assert('Cal.com Booking usa versao estavel 2024-08-13', versionHeader && versionHeader.value === '2024-08-13', versionHeader && versionHeader.value);
+
+  assert('Scraping usa saida loop para salvar lead', outputTargets(scraping, 'Processa 1 por vez', 1).includes('Supabase — Salva Lead'));
+  assert('Scraping usa saida done para finalizar', outputTargets(scraping, 'Processa 1 por vez', 0).includes('Fim — Todos Processados'));
+  assert('Mensagens usa saida loop para gerar mensagem', outputTargets(outbound, 'Loop 1 lead por vez', 1).includes('OpenAI — Gera Mensagem'));
+  assert('Mensagens usa saida done para finalizar lote', outputTargets(outbound, 'Loop 1 lead por vez', 0).includes('Próximo Lead'));
+  assert('Follow-up usa saida loop para processar lead', outputTargets(followup, 'Loop 1 lead por vez', 1).includes('Verifica Bloqueio'));
+  assert('Follow-up usa saida done para finalizar lote', outputTargets(followup, 'Loop 1 lead por vez', 0).includes('Fim'));
 
   const outboundBody = getNodeIncludes(outbound, 'Gera Mensagem').parameters.jsonBody;
   JSON.parse(outboundBody.startsWith('=') ? outboundBody.slice(1) : outboundBody);
