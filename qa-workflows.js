@@ -179,8 +179,14 @@ function validateStaticBusinessRules(workflows) {
   const outboundBody = getNodeIncludes(outbound, 'Gera Mensagem').parameters.jsonBody;
   JSON.parse(outboundBody.startsWith('=') ? outboundBody.slice(1) : outboundBody);
   ok('Payload OpenAI da primeira mensagem parseia como JSON');
-  assert('Primeira mensagem posiciona ecossistema', outboundBody.includes('ecossistema de captacao digital'));
+  assert('Primeira mensagem posiciona ecossistema', /ecossistema[s]? de captacao digital/i.test(outboundBody));
   assert('Primeira mensagem nao reduz a trafego pago', !/exclusiv|somente trafego pago|s[oó] trafego pago/i.test(outboundBody));
+
+  const outboundSendNode = getNode(outbound, 'Envia WhatsApp com Digitando') || getNodeIncludes(outbound, 'Envia WhatsApp');
+  const outboundSendText = JSON.stringify(outboundSendNode || {});
+  assert('Workflow 2 normaliza telefone antes do envio', outboundSendText.includes('normalizeBrazilPhone') || outboundSendText.includes('normalizePhone'));
+  assert('Workflow 2 tenta variacao com/sem nono digito', outboundSendText.includes('phoneVariants') && outboundSendText.includes("number[0] === '9'"));
+  assert('Workflow 2 nao envia sendText com JID', !/message\/sendText[\s\S]{0,900}@s\.whatsapp\.net/i.test(outboundSendText));
 
   const followupCode = getNodeIncludes(followup, 'Gera Follow-up').parameters.jsCode;
   assert('Follow-up posiciona ecossistema', followupCode.includes('ecossistemas de captacao'));
